@@ -1,0 +1,3 @@
+Date,Time,Instrument,Setup,Direction,Entry,Stop,Target1,Target2,Exit,Shares,Risk,Result,R-Mult,Violation,Emotion,Notes
+2026-08-30,09:42,SPY,VWAP Pullback,Long,501.30,500.95,502.00,501.83,501.90,100,35.00,60.00,1.71,None,Calm,Followed plan
+2026-08-30,10:15,NIFTYBEES,ORB 15m,Long,245.70,244.85,247.00,248.30,247.00,200,170.00,260.00,1.53,None,Confident,Clean breakout

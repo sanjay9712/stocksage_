@@ -25,7 +25,7 @@ function MetricBar({ value, max, color }: { value: number; max: number; color: s
 }
 
 export default function EtfPage() {
-  const { data, isLoading, error } = useSWR("etf", fetchEtfScreen, { refreshInterval: 5000, keepPreviousData: true });
+  const { data, isLoading, error } = useSWR("etf", fetchEtfScreen, { refreshInterval: 300000, keepPreviousData: true });
   const [expanded, setExpanded] = useState<string | null>(null);
 
   if (isLoading) {

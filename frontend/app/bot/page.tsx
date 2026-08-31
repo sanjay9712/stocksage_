@@ -170,6 +170,7 @@ export default function BotPage() {
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xl font-bold text-slate-100">{rec.symbol}</span>
+                {rec.name && rec.name !== rec.symbol && <span className="text-xs text-slate-500">{rec.name}</span>}
                 <span className="text-[10px] bg-slate-800 px-1.5 py-0.5 rounded text-slate-400">{stratLabel[rec.strategy || ""] || rec.strategy}</span>
                 <span className="text-[10px] text-slate-500 uppercase">{rec.side}</span>
               </div>

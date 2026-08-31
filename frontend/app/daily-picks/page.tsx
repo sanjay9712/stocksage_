@@ -109,7 +109,7 @@ function PickCard({ pick }: { pick: DailyPick }) {
         <RankBadge rank={pick.rank} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <Link href={`/stocks?symbol=${pick.symbol}`} className="font-bold text-slate-100 hover:text-emerald-400 transition-colors">
+            <Link href={`/stock/${pick.symbol}`} className="font-bold text-slate-100 hover:text-emerald-400 transition-colors">
               {pick.symbol}
             </Link>
             <VerdictBadge verdict={pick.verdict} />

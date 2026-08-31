@@ -166,5 +166,5 @@ function Stat({ label, value, color }: { label: string; value: number | null; co
 }
 
 function fmt(v: number) {
-  return v ? v.toFixed(2) : "—";
+  return v != null ? v.toFixed(2) : "—";
 }

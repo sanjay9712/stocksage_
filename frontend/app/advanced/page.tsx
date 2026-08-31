@@ -142,7 +142,7 @@ function StrategyTab({
           )}
           {strategy === "gap_go" && (
             <>
-              Entry when a stock <span className="text-emerald-400">gaps >2% at the open</span> with volume >2x average,
+              Entry when a stock <span className="text-emerald-400">gaps &gt;2% at the open</span> with volume &gt;2x average,
               then breaks out of the 15-min opening range. Stop at OR low, T1 at previous close (gap fill), T2 at 2R.
             </>
           )}
@@ -155,8 +155,8 @@ function StrategyTab({
           )}
           {strategy === "momentum_breakout" && (
             <>
-              Entry when price breaks the 15-min opening range on volume >1.5x with <span className="text-emerald-400">RSI
-              momentum confirmation</span> (RSI >60 long, <40 short). T1 at volume-profile POC, T2 at VAH/VAL or 2R.
+              Entry when price breaks the 15-min opening range on volume &gt;1.5x with <span className="text-emerald-400">RSI
+              momentum confirmation</span> (RSI &gt;60 long, &lt;40 short). T1 at volume-profile POC, T2 at VAH/VAL or 2R.
             </>
           )}
           {strategy === "abcd" && (

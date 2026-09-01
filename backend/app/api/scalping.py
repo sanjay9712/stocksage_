@@ -124,7 +124,7 @@ async def scalping_signals(_t: str = Depends(require_token)):
                 "filters": scalp_strat.SCALP_FILTERS,
                 "patterns_scanned": sorted(scalp_strat._DIRECITIONAL_PATTERNS),
             },
-            "near_misses": near_misses[:15],  # top 15 near-misses for display
+            "near_misses": near_misses[:30],  # top 30 near-misses for display
         }
 
     return await cached("scalping:signals", screen_cache_ttl(is_nse_open()), _fetch)

@@ -7,7 +7,7 @@ session with tight stops and small targets.
 Key parameters (from risk management principles):
   - ATR multiple for stop-loss:  1.0x  (tight — scalpers cut losses fast)
   - ATR multiple for target:     1.5x  (R:R >= 1.5 required)
-  - Minimum volume ratio:        0.8x  (above-average volume to enter)
+  - Minimum volume ratio:        0.5x  (above-average volume to enter)
   - ADX filter:                  soft penalty (not a hard skip)
   - Maximum hold bars:           ~6 candles (30 min on 5-min bars)
 
@@ -15,7 +15,7 @@ Entry logic:
   1. Stock must be in an intraday uptrend (price above 20-EMA on intraday).
   2. A bullish candlestick pattern fired on the most recent bar
      (engulfing, hammer, morning star, three white soldiers, piercing line, etc.).
-  3. Volume on the signal bar >= 0.8x average volume.
+  3. Volume on the signal bar >= 0.5x average volume.
   4. Entry = signal bar's close; SL = entry - 1xATR; target = entry + 1.5xATR.
 
 Short scalps are the mirror image (bearish pattern + downtrend).
@@ -67,7 +67,7 @@ def evaluate_scalp(
     symbol: str,
     daily: pd.DataFrame,
     intraday: pd.DataFrame,
-    min_volume_ratio: float = 0.8,
+    min_volume_ratio: float = 0.5,
     min_rr: float = 1.5,
     atr_period: int = 14,
     ema_period: int = 20,
@@ -321,7 +321,7 @@ def evaluate_scalp(
 SCALP_FILTERS = [
     {"name": "Directional candlestick pattern", "description": "A pattern with bullish or bearish conviction must fire on the last 5 intraday bars (e.g. Engulfing, Hammer, Morning Star, Marubozu)."},
     {"name": "EMA-20 trend alignment", "description": "Price must be above 20-EMA for longs, below for shorts. Pattern must align with the trend."},
-    {"name": "Volume ratio >= 0.8x", "description": "Signal bar volume must be at least 0.8x the 20-bar intraday average (relaxed from 1.5x to surface more candidates)."},
+    {"name": "Volume ratio >= 0.5x", "description": "Signal bar volume must be at least 0.5x the 20-bar intraday average (relaxed from 1.5x to surface more candidates)."},
     {"name": "R:R >= 1.5", "description": "Risk:reward ratio must be at least 1:1.5 based on 1xATR stop and 1.5xATR target."},
     {"name": "ADX (soft penalty)", "description": "ADX < 20 reduces confidence by 25% but no longer blocks the signal entirely."},
     {"name": "Stochastic (soft penalty)", "description": "If Stochastic doesn't confirm direction, confidence is reduced by 30%."},
@@ -407,8 +407,8 @@ def evaluate_scalp_debug(
         result["reason"] = "Pattern bias is neutral"
         return result
 
-    if vol_ratio < 0.8:
-        result["reason"] = f"Volume ratio {vol_ratio:.2f}x below 0.8x threshold"
+    if vol_ratio < 0.5:
+        result["reason"] = f"Volume ratio {vol_ratio:.2f}x below 0.5x threshold"
         return result
 
     if bias == "bullish" and trend == "uptrend":

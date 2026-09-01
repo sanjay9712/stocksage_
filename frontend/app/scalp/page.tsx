@@ -12,8 +12,6 @@ export default function ScalpPage() {
   const signals = data?.signals || [];
   const summary = data?.scan_summary;
   const nearMisses = data?.near_misses || [];
-  const [showNearMisses, setShowNearMisses] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
 
   return (
     <div className="space-y-5">
@@ -41,65 +39,64 @@ export default function ScalpPage() {
 
       <StockSearch />
 
-      {/* Scan Summary Banner */}
+      {/* Scan Summary — always visible */}
       {summary && (
         <div className="glass-card p-4">
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8" />
-                <path d="M21 21l-4.35-4.35" />
-              </svg>
-              <span className="text-sm font-medium text-slate-200">Scan Summary</span>
-            </div>
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
-            >
-              {showFilters ? "Hide filters" : "Show filters & criteria"}
-            </button>
+          <div className="flex items-center gap-2 mb-3">
+            <svg className="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35" />
+            </svg>
+            <span className="text-sm font-medium text-slate-200">Scan Summary</span>
+            <span className="text-[10px] text-slate-500 ml-auto">
+              {new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" })} IST
+            </span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
-            <div className="text-center">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="text-center bg-slate-800/30 rounded-lg py-2">
               <div className="text-xl font-bold tabular-nums text-slate-200">{summary.total_scanned}</div>
               <div className="text-[10px] uppercase tracking-wide text-slate-500">Stocks Scanned</div>
             </div>
-            <div className="text-center">
+            <div className="text-center bg-emerald-900/20 rounded-lg py-2">
               <div className="text-xl font-bold tabular-nums text-emerald-400">{summary.signals_found}</div>
               <div className="text-[10px] uppercase tracking-wide text-slate-500">Signals Found</div>
             </div>
-            <div className="text-center">
+            <div className="text-center bg-amber-900/20 rounded-lg py-2">
               <div className="text-xl font-bold tabular-nums text-amber-400">{summary.near_misses}</div>
               <div className="text-[10px] uppercase tracking-wide text-slate-500">Near Misses</div>
             </div>
-            <div className="text-center">
+            <div className="text-center bg-slate-800/30 rounded-lg py-2">
               <div className="text-xl font-bold tabular-nums text-slate-500">{summary.data_errors}</div>
               <div className="text-[10px] uppercase tracking-wide text-slate-500">Data Errors</div>
             </div>
           </div>
 
-          {/* Filters & Criteria */}
-          {showFilters && (
-            <div className="mt-4 pt-3 border-t border-slate-800/50 space-y-2 fade-in">
-              <div className="text-xs font-medium text-slate-300 mb-1">Patterns Scanned For ({summary.patterns_scanned.length}):</div>
-              <div className="flex flex-wrap gap-1 mb-3">
-                {summary.patterns_scanned.map((p, i) => (
-                  <span key={i} className="text-[10px] text-slate-400 bg-slate-800/50 rounded px-1.5 py-0.5 border border-slate-700/30">
-                    {p}
-                  </span>
-                ))}
-              </div>
-              <div className="text-xs font-medium text-slate-300 mb-1">Entry Filters:</div>
-              <ul className="space-y-1">
-                {summary.filters.map((f, i) => (
-                  <li key={i} className="text-xs text-slate-400 pl-3 border-l-2 border-slate-700">
-                    <span className="font-medium text-slate-300">{f.name}</span>
-                    <span className="text-slate-500"> — {f.description}</span>
-                  </li>
-                ))}
-              </ul>
+          {/* Patterns scanned — always visible */}
+          <div className="mt-4 pt-3 border-t border-slate-800/50">
+            <div className="text-xs font-medium text-slate-300 mb-2">
+              Patterns Scanned For ({summary.patterns_scanned.length}):
             </div>
-          )}
+            <div className="flex flex-wrap gap-1">
+              {summary.patterns_scanned.map((p, i) => (
+                <span key={i} className="text-[10px] text-slate-400 bg-slate-800/50 rounded px-1.5 py-0.5 border border-slate-700/30">
+                  {p}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Entry filters — always visible */}
+          <div className="mt-3 pt-3 border-t border-slate-800/50">
+            <div className="text-xs font-medium text-slate-300 mb-2">Entry Criteria (what a stock must pass to become a signal):</div>
+            <ul className="space-y-1.5">
+              {summary.filters.map((f, i) => (
+                <li key={i} className="text-xs text-slate-400 pl-3 border-l-2 border-emerald-700/50">
+                  <span className="font-medium text-slate-300">{f.name}</span>
+                  <span className="text-slate-500"> — {f.description}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       )}
 
@@ -111,7 +108,7 @@ export default function ScalpPage() {
           </svg>
           <p className="text-xs text-slate-400 leading-relaxed">
             Scalps fire when a <span className="text-emerald-400">directional candlestick pattern</span> aligns
-            with the intraday trend (EMA-20) and volume is <span className="text-sky-400">&ge; 0.8&times;</span> average.
+            with the intraday trend (EMA-20) and volume is <span className="text-sky-400">&ge; 0.5&times;</span> average.
             Stop-loss = 1&times;ATR, target = 1.5&times;ATR, R:R &ge; 1.5. Exit within 30 min.
             Stochastic, MACD, and ADX act as confidence modifiers (not hard blocks).
           </p>
@@ -145,33 +142,26 @@ export default function ScalpPage() {
         </div>
       )}
 
-      {/* Near-miss stocks */}
+      {/* Near-miss stocks — always expanded */}
       {nearMisses.length > 0 && (
         <div className="glass-card p-4">
-          <button
-            onClick={() => setShowNearMisses(!showNearMisses)}
-            className="flex items-center justify-between w-full"
-          >
-            <div className="flex items-center gap-2">
-              <svg className="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-              </svg>
-              <span className="text-sm font-medium text-slate-200">
-                Near-Miss Stocks ({nearMisses.length})
-              </span>
-            </div>
-            <span className="text-xs text-slate-500">{showNearMisses ? "Hide" : "Show"}</span>
-          </button>
-          <p className="text-xs text-slate-500 mt-1">
-            These stocks had a directional candlestick pattern but didn&apos;t fully qualify. Shows what&apos;s being tested.
+          <div className="flex items-center gap-2 mb-1">
+            <svg className="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+            <span className="text-sm font-medium text-slate-200">
+              Near-Miss Stocks ({nearMisses.length})
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 mb-3">
+            These stocks had a candlestick pattern but didn&apos;t fully qualify for a signal.
+            Each card shows the exact reason why it was rejected — so you can see what&apos;s being tested.
           </p>
-          {showNearMisses && (
-            <div className="mt-3 space-y-2 fade-in">
-              {nearMisses.map((m) => (
-                <NearMissCard key={m.symbol} miss={m} />
-              ))}
-            </div>
-          )}
+          <div className="grid gap-2 sm:grid-cols-2">
+            {nearMisses.map((m) => (
+              <NearMissCard key={m.symbol} miss={m} />
+            ))}
+          </div>
         </div>
       )}
 
@@ -249,9 +239,7 @@ function ScalpCard({ signal }: { signal: ScalpSignal }) {
         {signal.patterns.map((p, i) => (
           <span
             key={i}
-            className={`text-[10px] font-medium rounded border px-1.5 py-0.5 ${strengthBadge(p.strength)} ${
-              p.bias === "bullish" ? "" : p.bias === "bearish" ? "" : ""
-            }`}
+            className={`text-[10px] font-medium rounded border px-1.5 py-0.5 ${strengthBadge(p.strength)}`}
           >
             {p.name}
           </span>
@@ -322,7 +310,7 @@ function NearMissCard({ miss }: { miss: ScalpNearMiss }) {
         <span className="text-[10px] text-slate-600">₹{d?.last_close?.toFixed(2) || "—"}</span>
       </div>
       <p className="text-xs text-amber-400/60 mt-1">{miss.reason}</p>
-      <div className="flex flex-wrap gap-2 mt-2 text-[10px] text-slate-500">
+      <div className="flex flex-wrap gap-1.5 mt-2 text-[10px] text-slate-500">
         {d?.trend && (
           <span className="bg-slate-800/40 rounded px-1.5 py-0.5">Trend: {d.trend}</span>
         )}

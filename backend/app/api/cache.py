@@ -7,11 +7,17 @@ refreshes in the background after the TTL expires (stale-while-revalidate).
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from typing import Any, Awaitable, Callable
 
+log = logging.getLogger("cache")
+
 _cache: dict[str, tuple[float, Any]] = {}
 _locks: dict[str, asyncio.Lock] = {}
+
+# Max time to serve stale data before forcing a synchronous refresh (5 min).
+_MAX_STALE_SECONDS = 300
 
 
 async def cached(
@@ -22,6 +28,8 @@ async def cached(
     """Return cached result if fresh; otherwise call fn and cache it.
 
     Uses a per-key lock so concurrent requests don't trigger duplicate fetches.
+    Stale data is served for up to _MAX_STALE_SECONDS past TTL, then a
+    synchronous refresh is forced.
     """
     now = time.time()
     entry = _cache.get(key)
@@ -29,18 +37,18 @@ async def cached(
         return entry[1]
 
     # Stale-while-revalidate: return stale data immediately, refresh in bg.
-    if entry:
+    if entry and (now - entry[0]) < ttl + _MAX_STALE_SECONDS:
         lock = _locks.setdefault(key, asyncio.Lock())
         if not lock.locked():
             asyncio.create_task(_refresh(key, ttl, fn))
         return entry[1]
 
-    # No cache at all — must wait for the first fetch.
+    # Stale data too old or no cache — must wait for the fetch.
     lock = _locks.setdefault(key, asyncio.Lock())
     async with lock:
         # Double-check after acquiring lock (another request may have filled it).
         entry = _cache.get(key)
-        if entry and (time.time() - entry[0]) < ttl:
+        if entry and (time.time() - entry[0]) < ttl + _MAX_STALE_SECONDS:
             return entry[1]
         result = await fn()
         _cache[key] = (time.time(), result)
@@ -52,8 +60,8 @@ async def _refresh(key: str, ttl: int, fn: Callable[[], Awaitable[Any]]) -> None
     try:
         result = await fn()
         _cache[key] = (time.time(), result)
-    except Exception:
-        pass  # keep stale data on refresh failure
+    except Exception as e:
+        log.warning("Background refresh failed for key=%s: %s", key, e)
 
 
 def invalidate(key: str | None = None) -> None:

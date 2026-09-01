@@ -7,14 +7,15 @@ session with tight stops and small targets.
 Key parameters (from risk management principles):
   - ATR multiple for stop-loss:  1.0x  (tight — scalpers cut losses fast)
   - ATR multiple for target:     1.5x  (R:R >= 1.5 required)
-  - Minimum volume ratio:        1.5x  (needs above-average volume to enter)
+  - Minimum volume ratio:        0.8x  (above-average volume to enter)
+  - ADX filter:                  soft penalty (not a hard skip)
   - Maximum hold bars:           ~6 candles (30 min on 5-min bars)
 
 Entry logic:
   1. Stock must be in an intraday uptrend (price above 20-EMA on intraday).
   2. A bullish candlestick pattern fired on the most recent bar
      (engulfing, hammer, morning star, three white soldiers, piercing line, etc.).
-  3. Volume on the signal bar >= 1.5x average volume.
+  3. Volume on the signal bar >= 0.8x average volume.
   4. Entry = signal bar's close; SL = entry - 1xATR; target = entry + 1.5xATR.
 
 Short scalps are the mirror image (bearish pattern + downtrend).
@@ -66,7 +67,7 @@ def evaluate_scalp(
     symbol: str,
     daily: pd.DataFrame,
     intraday: pd.DataFrame,
-    min_volume_ratio: float = 1.5,
+    min_volume_ratio: float = 0.8,
     min_rr: float = 1.5,
     atr_period: int = 14,
     ema_period: int = 20,
@@ -214,9 +215,10 @@ def evaluate_scalp(
         except Exception:
             adx_val = 0.0
 
-    # Murphy: if ADX < 20, market is not trending — skip the scalp entirely.
-    if adx_val > 0 and adx_val < 20:
-        return None
+    # Murphy: ADX < 20 means weak trend — soft penalty instead of hard skip.
+    # (Previously this returned None, which eliminated most stocks outside
+    # strong trends. Now we emit the signal with reduced confidence so users
+    # can see what's being tested even in choppy conditions.)
 
     # Compute entry, SL, target.
     entry = last_close
@@ -250,6 +252,9 @@ def evaluate_scalp(
     # Murphy: if Stochastic or MACD don't confirm, reduce confidence by 30%.
     if not stoch_confirms or not macd_confirms:
         confidence = round(confidence * 0.7, 3)
+    # Soft ADX penalty: weak trend reduces confidence but doesn't block signal.
+    if adx_val > 0 and adx_val < 20:
+        confidence = round(confidence * 0.75, 3)
 
     # Build explanation.
     pattern_names = ", ".join(f"{h.name} ({h.strength})" for h in directional)
@@ -307,3 +312,115 @@ def evaluate_scalp(
         macd_histogram=round(macd_hist_val, 6),
         adx_value=round(adx_val, 2),
     )
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics: explain why a stock did or didn't produce a signal.
+# ---------------------------------------------------------------------------
+
+SCALP_FILTERS = [
+    {"name": "Directional candlestick pattern", "description": "A pattern with bullish or bearish conviction must fire on the last 5 intraday bars (e.g. Engulfing, Hammer, Morning Star, Marubozu)."},
+    {"name": "EMA-20 trend alignment", "description": "Price must be above 20-EMA for longs, below for shorts. Pattern must align with the trend."},
+    {"name": "Volume ratio >= 0.8x", "description": "Signal bar volume must be at least 0.8x the 20-bar intraday average (relaxed from 1.5x to surface more candidates)."},
+    {"name": "R:R >= 1.5", "description": "Risk:reward ratio must be at least 1:1.5 based on 1xATR stop and 1.5xATR target."},
+    {"name": "ADX (soft penalty)", "description": "ADX < 20 reduces confidence by 25% but no longer blocks the signal entirely."},
+    {"name": "Stochastic (soft penalty)", "description": "If Stochastic doesn't confirm direction, confidence is reduced by 30%."},
+    {"name": "MACD (soft penalty)", "description": "If MACD histogram doesn't confirm direction, confidence is reduced by 30%."},
+]
+
+
+def evaluate_scalp_debug(
+    symbol: str,
+    daily: pd.DataFrame,
+    intraday: pd.DataFrame,
+) -> dict:
+    """Evaluate a stock for scalping and return diagnostics.
+
+    Returns a dict with:
+      - signal: ScalpSignal or None
+      - reason: why no signal (if None)
+      - diagnostics: intermediate values (trend, volume_ratio, patterns, adx, etc.)
+    """
+    result = {"symbol": symbol, "signal": None, "reason": None, "diagnostics": {}}
+
+    if intraday is None or intraday.empty or len(intraday) < 22:
+        result["reason"] = "Insufficient intraday data (< 22 bars)"
+        return result
+    if daily is None or daily.empty:
+        result["reason"] = "No daily data"
+        return result
+
+    atr_series = ind.atr(daily, 14)
+    atr_val = float(atr_series.iloc[-1]) if len(atr_series) >= 14 else 0.0
+    if atr_val <= 0:
+        result["reason"] = "ATR is zero"
+        return result
+
+    avg_vol = ind.avg_volume(intraday, 20)
+    ema = ind.ema(intraday["Close"], 20)
+    last_close = float(intraday["Close"].iloc[-1])
+    ema_val = float(ema.iloc[-1]) if len(ema) >= 20 else last_close
+
+    if last_close > ema_val:
+        trend = "uptrend"
+    elif last_close < ema_val:
+        trend = "downtrend"
+    else:
+        trend = "sideways"
+
+    recent = intraday.tail(5)
+    hits = detect_patterns(recent, lookback=5)
+    directional = [h for h in hits if h.name in _DIRECITIONAL_PATTERNS]
+
+    signal_bar = intraday.iloc[-1]
+    signal_vol = float(signal_bar["Volume"])
+    vol_ratio = signal_vol / avg_vol if avg_vol > 0 else 0.0
+
+    # ADX for diagnostics
+    adx_val = 0.0
+    try:
+        adx_res = ind.adx(intraday, 14)
+        if len(adx_res["adx"]) >= 1:
+            adx_val = float(adx_res["adx"].iloc[-1])
+    except Exception:
+        pass
+
+    result["diagnostics"] = {
+        "trend": trend,
+        "last_close": round(last_close, 2),
+        "ema20": round(ema_val, 2),
+        "atr": round(atr_val, 2),
+        "volume_ratio": round(vol_ratio, 2),
+        "avg_volume": int(avg_vol) if avg_vol > 0 else 0,
+        "patterns_found": [h.name for h in hits],
+        "directional_patterns": [h.name for h in directional],
+        "adx": round(adx_val, 2),
+    }
+
+    if not directional:
+        bias = "neutral"
+        result["reason"] = f"No directional pattern (found: {[h.name for h in hits] or 'none'})"
+        return result
+
+    bias = net_bias(directional)
+    if bias == "neutral":
+        result["reason"] = "Pattern bias is neutral"
+        return result
+
+    if vol_ratio < 0.8:
+        result["reason"] = f"Volume ratio {vol_ratio:.2f}x below 0.8x threshold"
+        return result
+
+    if bias == "bullish" and trend == "uptrend":
+        side = "long"
+    elif bias == "bearish" and trend == "downtrend":
+        side = "short"
+    else:
+        result["reason"] = f"Pattern bias ({bias}) against trend ({trend})"
+        return result
+
+    # All filters passed — evaluate the full signal.
+    signal = evaluate_scalp(symbol, daily, intraday)
+    result["signal"] = signal
+    result["reason"] = "Signal generated" if signal else "R:R below 1.5"
+    return result

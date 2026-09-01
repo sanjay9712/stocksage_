@@ -162,8 +162,7 @@ def evaluate_vwap_pullback(
         risk = abs(entry - stop_loss)
         target2 = entry + 1.5 * risk
     else:
-        stop_loss = pullback_low + 0.05  # buffer above the pullback high (mirror)
-        # For shorts, pullback_low is actually the high of the pullback.
+        # For shorts, use the high of the pullback as stop.
         pullback_high = float(last3["High"].max())
         stop_loss = pullback_high + 0.05
         target1 = vwap_val if vwap_val < entry else entry - atr_val

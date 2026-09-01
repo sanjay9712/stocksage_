@@ -215,10 +215,11 @@ async def compute_strategy_track_records(
 
         if not record.min_trades_met and record.backtest_win_rate is not None:
             # Use backtest as supplementary evidence.
-            # If backtest shows good results, count toward "proven" with backtest_days.
+            # If backtest shows good results, count toward "proven" — but
+            # still require min_days of live tracking so a strategy can't
+            # be marked proven on day 1 just from a backtest.
             if record.backtest_win_rate >= min_win_rate and (record.backtest_avg_return or 0) >= min_avg_pnl:
-                # Backtest validates the strategy — treat as proven if we have at least some live data.
-                if record.days_tracked >= 1 and record.total_trades >= 1:
+                if record.min_days_met and record.total_trades >= 1:
                     record.verdict = "proven"
                     # Check previous verification snapshots for proven_since.
                     record.proven_since = _get_proven_since(db, strat_name, today)

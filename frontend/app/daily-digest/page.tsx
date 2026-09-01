@@ -207,9 +207,9 @@ function DigestView({ digest }: { digest: DigestDetail }) {
               <div key={i} className="text-xs flex items-center gap-2 py-1 border-b border-slate-800/30">
                 <span className="font-semibold text-slate-200">{a.symbol}</span>
                 <span className="text-slate-500">{a.condition.replace("_", " ")}</span>
-                <span className="text-slate-400">${a.target_price}</span>
+                <span className="text-slate-400">₹{a.target_price}</span>
                 <span className="text-slate-500">→</span>
-                <span className="text-emerald-400 font-semibold">${a.triggered_price}</span>
+                <span className="text-emerald-400 font-semibold">₹{a.triggered_price}</span>
               </div>
             ))}
           </div>

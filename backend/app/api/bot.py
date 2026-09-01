@@ -14,7 +14,7 @@ from datetime import date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, func, desc, case
 from sqlalchemy.orm import Session
 
 from app.api.auth import require_user
@@ -113,6 +113,15 @@ async def bot_decisions(
         stmt = stmt.where(BotDecision.status == status)
     rows = db.execute(stmt).scalars().all()
 
+    # Build symbol → name map from NSE stock list.
+    name_map: dict[str, str] = {}
+    try:
+        from app.providers.nse_list import get_nse_stocks
+        for s in await get_nse_stocks():
+            name_map[s["symbol"]] = s.get("name", s["symbol"])
+    except Exception:
+        pass
+
     return {
         "decisions": [
             {
@@ -120,6 +129,7 @@ async def bot_decisions(
                 "scan_time": r.scan_time.isoformat() if r.scan_time else None,
                 "date": str(r.date),
                 "symbol": r.symbol,
+                "name": name_map.get(r.symbol, r.symbol),
                 "market": r.market,
                 "strategy": r.strategy,
                 "side": r.side,
@@ -233,35 +243,38 @@ async def bot_history(
     limit: int = Query(30, le=365),
 ):
     """Daily aggregate P&L history for the bot."""
+    # Use SQL GROUP BY for efficiency instead of fetching 5000 rows.
     rows = db.execute(
-        select(BotDecision).order_by(desc(BotDecision.date)).limit(5000)
-    ).scalars().all()
+        select(
+            BotDecision.date,
+            func.count().label("total_signals"),
+            func.sum(case((BotDecision.status == "open", 1), else_=0)).label("open"),
+            func.sum(case((BotDecision.status != "open", 1), else_=0)).label("resolved"),
+            func.sum(case((BotDecision.pnl_pct > 0, 1), else_=0)).label("wins"),
+            func.sum(case((BotDecision.pnl_pct <= 0, 1), else_=0)).label("losses"),
+            func.sum(BotDecision.pnl_pct).label("pnl_sum"),
+        ).group_by(BotDecision.date).order_by(desc(BotDecision.date)).limit(limit)
+    ).all()
 
     if not rows:
         return {"history": [], "count": 0}
 
-    by_date: dict[str, list[BotDecision]] = {}
-    for r in rows:
-        by_date.setdefault(str(r.date), []).append(r)
-
     history = []
-    for day_str in sorted(by_date.keys(), reverse=True)[:limit]:
-        day_trades = by_date[day_str]
-        resolved = [t for t in day_trades if t.status != "open"]
-        wins = [t for t in resolved if t.pnl_pct is not None and t.pnl_pct > 0]
-        losses = [t for t in resolved if t.pnl_pct is not None and t.pnl_pct <= 0]
-        pnls = [t.pnl_pct for t in resolved if t.pnl_pct is not None]
-
+    for r in rows:
+        resolved = r.resolved or 0
+        wins = r.wins or 0
+        losses = r.losses or 0
+        pnl_sum = r.pnl_sum or 0.0
         history.append({
-            "date": day_str,
-            "total_signals": len(day_trades),
-            "open": sum(1 for t in day_trades if t.status == "open"),
-            "resolved": len(resolved),
-            "wins": len(wins),
-            "losses": len(losses),
-            "win_rate": round(len(wins) / len(resolved) * 100, 1) if resolved else 0.0,
-            "pnl_pct": round(sum(pnls), 2) if pnls else 0.0,
-            "avg_pnl_pct": round(sum(pnls) / len(pnls), 2) if pnls else 0.0,
+            "date": str(r.date),
+            "total_signals": r.total_signals,
+            "open": r.open or 0,
+            "resolved": resolved,
+            "wins": wins,
+            "losses": losses,
+            "win_rate": round(wins / resolved * 100, 1) if resolved > 0 else 0.0,
+            "pnl_pct": round(pnl_sum, 2),
+            "avg_pnl_pct": round(pnl_sum / resolved, 2) if resolved > 0 else 0.0,
         })
 
     return {"history": history, "count": len(history)}

@@ -8,11 +8,15 @@ import StockSearch from "@/components/StockSearch";
 export default function HomePage() {
   const { data: day, error: dayErr, mutate: mutateDay } = useSWR("day", fetchDayStatus, { refreshInterval: 10000, keepPreviousData: true });
   const { data: picks, error: picksErr, mutate: mutatePicks, isLoading } = useSWR("picks", fetchPicks, { refreshInterval: 10000, keepPreviousData: true });
-  const { data: market, error: marketErr } = useSWR("market", fetchMarketLive, { refreshInterval: 1000, keepPreviousData: true });
+  const { data: market, error: marketErr } = useSWR("market", fetchMarketLive, { refreshInterval: 5000, keepPreviousData: true });
 
   async function scan() {
-    await triggerScan();
-    await Promise.all([mutatePicks(), mutateDay()]);
+    try {
+      await triggerScan();
+      await Promise.all([mutatePicks(), mutateDay()]);
+    } catch {
+      // silently fail — user can retry
+    }
   }
 
   const backendDown = !!dayErr && !!picksErr;

@@ -90,6 +90,8 @@ async def daily_picks(
         finally:
             db.close()
 
+        # Return a copy so we don't mutate the cached dict.
+        result = dict(result)
         murphy_proven = "murphy" in proven
         result["murphy_proven"] = murphy_proven
         result["proven_strategies"] = proven
@@ -139,6 +141,10 @@ async def picks_verification(_t: User = Depends(require_token)):
                 "backtest_days": r.backtest_days,
                 "verdict": r.verdict,
                 "proven_since": r.proven_since.isoformat() if r.proven_since else None,
+                "min_trades_met": r.min_trades_met,
+                "min_days_met": r.min_days_met,
+                "min_win_rate_met": r.min_win_rate_met,
+                "min_pnl_met": r.min_pnl_met,
             }
             for r in records
         ],

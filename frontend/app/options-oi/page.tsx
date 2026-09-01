@@ -49,9 +49,27 @@ function sentimentColor(s: string): string {
   }
 }
 
+const QUICK_PICKS = [
+  { label: "NIFTY", value: "NIFTY" },
+  { label: "BANK NIFTY", value: "BANKNIFTY" },
+  { label: "FIN NIFTY", value: "FINNIFTY" },
+  { label: "RELIANCE", value: "RELIANCE" },
+  { label: "HDFCBANK", value: "HDFCBANK" },
+  { label: "SPY", value: "SPY" },
+  { label: "AAPL", value: "AAPL" },
+];
+
+function isIndianSymbol(symbol: string): boolean {
+  const s = symbol.toUpperCase().replace(".NS", "").replace("NSE:", "");
+  if (["SPY", "AAPL", "MSFT", "AMZN", "GOOGL", "TSLA", "NVDA", "META", "NFLX", "AMD", "QQQ", "IWM", "DIA", "BA", "JPM", "GS"].includes(s)) return false;
+  if (["NIFTY", "BANKNIFTY", "FINNIFTY", "NIFTY50", "SENSEX"].includes(s)) return true;
+  // Indian stock tickers are typically alphanumeric without dots
+  return !s.includes(".") && !s.startsWith("^");
+}
+
 export default function OptionsOIPage() {
-  const [symbol, setSymbol] = useState("SPY");
-  const [inputSymbol, setInputSymbol] = useState("SPY");
+  const [symbol, setSymbol] = useState("NIFTY");
+  const [inputSymbol, setInputSymbol] = useState("NIFTY");
   const [expiry, setExpiry] = useState<string | undefined>(undefined);
 
   const { data, error, isLoading, mutate } = useSWR(
@@ -108,11 +126,34 @@ export default function OptionsOIPage() {
         </button>
       </form>
 
-      {isLoading && !data && <div className="glass-card h-64 shimmer" />}
+      {/* Quick picks */}
+      <div className="flex flex-wrap gap-1.5">
+        {QUICK_PICKS.map((q) => (
+          <button
+            key={q.value}
+            onClick={() => { setSymbol(q.value); setInputSymbol(q.value); setExpiry(undefined); }}
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+              symbol === q.value ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+            }`}
+          >
+            {q.label}
+          </button>
+        ))}
+      </div>
+
+      {isLoading && !data && (
+        <div className="glass-card p-8 text-center">
+          <div className="shimmer h-5 w-48 rounded mx-auto mb-3" />
+          <div className="shimmer h-3 w-full rounded mb-2" />
+          <div className="shimmer h-3 w-2/3 rounded" />
+          <p className="text-xs text-slate-500 mt-3">Loading option chain for {symbol}…</p>
+        </div>
+      )}
 
       {error && !data && (
         <div className="text-center py-12">
-          <p className="text-rose-300 mb-4">Failed to load options data for {symbol}</p>
+          <p className="text-rose-300 mb-2">Failed to load options data for {symbol}</p>
+          <p className="text-xs text-slate-500 mb-4">{error instanceof Error ? error.message : "Unknown error"}</p>
           <button onClick={() => mutate()} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm">
             Retry
           </button>
@@ -121,7 +162,12 @@ export default function OptionsOIPage() {
 
       {data && data.error && (
         <div className="glass-card p-8 text-center">
-          <p className="text-amber-300 text-sm">{data.error}</p>
+          <p className="text-amber-300 text-sm mb-2">{data.error}</p>
+          <p className="text-xs text-slate-500">
+            {isIndianSymbol(symbol)
+              ? `yfinance may not have option chain data for ${symbol}. Try NIFTY or BANKNIFTY for index options, or use a US symbol like SPY or AAPL.`
+              : `No option chain data available for ${symbol}.`}
+          </p>
         </div>
       )}
 
@@ -181,7 +227,7 @@ export default function OptionsOIPage() {
                 {data.resistance_levels.map((r, i) => (
                   <div key={i} className="flex justify-between text-xs">
                     <span className="text-slate-400">Strike {r.strike.toFixed(2)}</span>
-                    <span className="text-rose-300 tabular-nums">{(r.call_oi! / 1000).toFixed(0)}k OI</span>
+                    <span className="text-rose-300 tabular-nums">{((r.call_oi ?? 0) / 1000).toFixed(0)}k OI</span>
                   </div>
                 ))}
                 {data.resistance_levels.length === 0 && <span className="text-slate-500 text-xs">No data</span>}
@@ -193,7 +239,7 @@ export default function OptionsOIPage() {
                 {data.support_levels.map((s, i) => (
                   <div key={i} className="flex justify-between text-xs">
                     <span className="text-slate-400">Strike {s.strike.toFixed(2)}</span>
-                    <span className="text-emerald-300 tabular-nums">{(s.put_oi! / 1000).toFixed(0)}k OI</span>
+                    <span className="text-emerald-300 tabular-nums">{((s.put_oi ?? 0) / 1000).toFixed(0)}k OI</span>
                   </div>
                 ))}
                 {data.support_levels.length === 0 && <span className="text-slate-500 text-xs">No data</span>}

@@ -16,6 +16,15 @@ from app.providers.factory import get_provider
 
 router = APIRouter()
 
+# Map common index names to yfinance symbols
+_INDEX_MAP = {
+    "NIFTY": "^NSEI",
+    "NIFTY50": "^NSEI",
+    "BANKNIFTY": "^NSEBANK",
+    "FINNIFTY": "^CNXFIN",
+    "SENSEX": "^BSESN",
+}
+
 
 def _compute_max_pain(calls: list[dict], puts: list[dict], strikes: list[float]) -> float:
     """Max Pain: the strike price at which option writers (sellers) experience
@@ -61,6 +70,10 @@ async def options_oi(
     and support (high put OI) levels.
     """
     symbol = symbol.strip().upper().replace(".NS", "").replace("NSE:", "")
+
+    # Map common index names to yfinance symbols
+    if symbol in _INDEX_MAP:
+        symbol = _INDEX_MAP[symbol]
 
     async def _fetch():
         provider = get_provider()

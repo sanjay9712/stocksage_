@@ -66,16 +66,20 @@ export class ApiError extends Error {
   }
 }
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+async function apiFetch<T>(path: string, init?: RequestInit, timeoutMs?: number): Promise<T> {
   const token = getToken();
-  const res = await fetch(path, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init?.headers || {}),
-    },
-  });
+  const controller = timeoutMs ? new AbortController() : undefined;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), timeoutMs) : undefined;
+  try {
+    const res = await fetch(path, {
+      ...init,
+      signal: controller?.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init?.headers || {}),
+      },
+    });
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
     let message = text;
@@ -88,6 +92,9 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(message, res.status);
   }
   return res.json() as Promise<T>;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -478,9 +485,38 @@ export interface ScalpSignal {
   macd_histogram?: number;
   adx_value?: number;
 }
+export interface ScalpFilter {
+  name: string;
+  description: string;
+}
+export interface ScalpNearMiss {
+  symbol: string;
+  name: string;
+  reason: string;
+  diagnostics: {
+    trend?: string;
+    last_close?: number;
+    ema20?: number;
+    atr?: number;
+    volume_ratio?: number;
+    avg_volume?: number;
+    patterns_found?: string[];
+    directional_patterns?: string[];
+    adx?: number;
+  };
+}
 export interface ScalpingResponse {
   signals: ScalpSignal[];
   count: number;
+  scan_summary?: {
+    total_scanned: number;
+    signals_found: number;
+    near_misses: number;
+    data_errors: number;
+    filters: ScalpFilter[];
+    patterns_scanned: string[];
+  };
+  near_misses?: ScalpNearMiss[];
 }
 export const fetchScalping = () => apiFetch<ScalpingResponse>("/api/scalping");
 export const fetchScalpSignal = (symbol: string) =>
@@ -1556,12 +1592,6 @@ export const testNotification = (message?: string) =>
 // Broker trading (Fyers)
 // ---------------------------------------------------------------------------
 
-export interface BrokerStatus {
-  broker: string;
-  connected: boolean;
-  message: string;
-}
-
 export interface BrokerPosition {
   symbol: string;
   quantity: number;
@@ -1771,6 +1801,14 @@ export interface IpoValuation {
   discount_to_peers_pct: number | null;
 }
 
+export interface IpoCriteriaItem {
+  factor: string;
+  value: string;
+  threshold: string;
+  met: boolean;
+  detail: string;
+}
+
 export interface IpoRecommendation {
   verdict: "Apply" | "Consider" | "Avoid" | "Insufficient Data";
   pros: string[];
@@ -1779,6 +1817,7 @@ export interface IpoRecommendation {
   summary: string;
   issue_structure: IpoIssueStructure;
   valuation: IpoValuation;
+  criteria: IpoCriteriaItem[];
 }
 
 export interface IpoTimeline {
@@ -1983,6 +2022,7 @@ export interface BotDecision {
   scan_time: string | null;
   date: string;
   symbol: string;
+  name?: string;
   market: string;
   strategy: string;
   side: string;
@@ -2054,10 +2094,23 @@ export const fetchBotHistory = (limit = 30) =>
   apiFetch<{ history: PaperDayHistory[]; count: number }>(`/api/bot/history?limit=${limit}`);
 export const triggerBotScan = (market = "nse") =>
   apiFetch<{ new_signals: number; resolved: number; by_strategy: Record<string, number>; scan_time: string }>(
-    `/api/bot/scan?market=${market}`, { method: "POST" }
+    `/api/bot/scan?market=${market}`, { method: "POST" }, 120_000
   );
+export interface StrategyComparisonEntry {
+  strategy: string;
+  days_ranked: number;
+  total_signals: number;
+  wins: number;
+  losses: number;
+  total_pnl: number;
+  win_rate: number;
+  avg_pnl: number;
+  avg_wfe: number;
+  rank_1_count: number;
+  recommended_count: number;
+}
 export const fetchStrategyComparison = (days = 30) =>
-  apiFetch<{ comparison: Record<string, any>; count: number }>(`/api/bot/strategy-comparison?days=${days}`);
+  apiFetch<{ comparison: Record<string, StrategyComparisonEntry>; count: number }>(`/api/bot/strategy-comparison?days=${days}`);
 
 // ---------------------------------------------------------------------------
 // Strategy verification (proven/testing/unproven)

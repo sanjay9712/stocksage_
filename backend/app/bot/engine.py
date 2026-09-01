@@ -69,6 +69,8 @@ _WF_STRATEGY_MAP = {
 
 
 def _calc_pnl(side: str, entry: float, exit_price: float) -> float:
+    if entry == 0:
+        return 0.0
     if side == "long":
         return round(((exit_price - entry) / entry) * 100.0, 2)
     return round(((entry - exit_price) / entry) * 100.0, 2)
@@ -574,8 +576,20 @@ async def generate_daily_recommendation(db: Session, target_date: date) -> Daily
         db.delete(existing)
         db.commit()
 
+    # Look up company name from NSE stock list.
+    rec_name = best.symbol
+    try:
+        from app.providers.nse_list import get_nse_stocks
+        nse_stocks = await get_nse_stocks()
+        for s in nse_stocks:
+            if s["symbol"] == best.symbol:
+                rec_name = s.get("name", best.symbol)
+                break
+    except Exception:
+        pass
+
     rec = DailyRecommendation(
-        date=target_date, symbol=best.symbol, name=best.symbol,
+        date=target_date, symbol=best.symbol, name=rec_name,
         strategy=top_strategy, side=best.side,
         entry=best.entry, stop_loss=best.stop_loss, target=best.target,
         confidence=best.confidence, risk_reward=best.risk_reward,

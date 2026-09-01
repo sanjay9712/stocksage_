@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import useSWR from "swr";
+import useSWR, { mutate as globalMutate } from "swr";
 import Link from "next/link";
 import {
   fetchBotStatus,
@@ -84,13 +84,31 @@ export default function BotPage() {
   );
 
   const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scanElapsed, setScanElapsed] = useState(0);
 
   async function handleScan() {
     setScanning(true);
+    setScanError(null);
+    setScanElapsed(0);
+    const startTime = Date.now();
+    const timer = setInterval(() => setScanElapsed(Math.floor((Date.now() - startTime) / 1000)), 1000);
     try {
       await triggerBotScan("nse");
-      await Promise.all([mutateStatus()]);
+      // Refresh all bot-related SWR caches
+      await Promise.all([
+        mutateStatus(),
+        globalMutate("bot-decisions"),
+        globalMutate("bot-rankings"),
+        globalMutate("bot-rec"),
+        globalMutate("bot-history"),
+        globalMutate("bot-comparison"),
+      ]);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Scan failed. The bot scans 50+ stocks across 10 strategies and may take 30-60 seconds.";
+      setScanError(msg);
     } finally {
+      clearInterval(timer);
       setScanning(false);
     }
   }
@@ -129,7 +147,7 @@ export default function BotPage() {
             )}
           </div>
           <p className="text-xs text-slate-400 mt-0.5">
-            5 strategies (Murphy + Nison + VWAP + Bollinger + PPO) · paper trading · not investment advice
+            10 strategies · paper trading · proven-only recommendations · not investment advice
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -142,12 +160,38 @@ export default function BotPage() {
             className="flex items-center gap-2 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-40 px-3 py-1.5 text-xs font-medium transition-colors"
           >
             <svg className={`w-3.5 h-3.5 ${scanning ? "animate-spin" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 12a9 9 011-6.219-8.56" />
+              <path d="M21 12a9 9 0 11-6.219-8.56" />
             </svg>
-            {scanning ? "Scanning…" : "Scan Now"}
+            {scanning ? `Scanning… ${scanElapsed}s` : "Scan Now"}
           </button>
         </div>
       </div>
+
+      {scanError && (
+        <div className="glass-card p-3 border-l-4 border-rose-500/50 flex items-start gap-2">
+          <span className="text-rose-400 text-sm">⚠</span>
+          <div className="flex-1">
+            <p className="text-sm text-rose-300">{scanError}</p>
+            <button onClick={handleScan} className="mt-1 text-xs text-sky-400 hover:text-sky-300 underline">
+              Retry scan
+            </button>
+          </div>
+          <button onClick={() => setScanError(null)} className="text-slate-500 hover:text-slate-300 text-xs">✕</button>
+        </div>
+      )}
+
+      {scanning && scanElapsed > 10 && (
+        <div className="glass-card p-3 flex items-center gap-2">
+          <div className="flex gap-1">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: "0ms" }} />
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: "150ms" }} />
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-bounce" style={{ animationDelay: "300ms" }} />
+          </div>
+          <span className="text-xs text-slate-400">
+            Scanning 50+ stocks across 10 strategies — this takes 30-60 seconds. Please wait…
+          </span>
+        </div>
+      )}
 
       {/* Status summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -317,7 +361,7 @@ export default function BotPage() {
         <div>
           <h2 className="text-sm font-semibold text-slate-400 mb-3">Multi-Day Strategy Comparison (30 days)</h2>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {Object.values(comparison).map((s: any) => (
+            {Object.values(comparison).map((s) => (
               <div key={s.strategy} className="glass-card p-3">
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-medium text-slate-100 text-sm">{stratLabel[s.strategy] || s.strategy}</span>
@@ -401,6 +445,9 @@ export default function BotPage() {
                   <tr key={d.id} className="border-b border-slate-800/30 hover:bg-slate-800/20">
                     <td className="px-3 py-2">
                       <Link href={`/stock/${d.symbol}`} className="font-medium text-slate-100 hover:text-sky-400">{d.symbol}</Link>
+                      {d.name && d.name !== d.symbol && (
+                        <span className="block text-[10px] text-slate-500">{d.name}</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-slate-400">{stratLabel[d.strategy] || d.strategy}</td>
                     <td className="px-3 py-2 text-slate-400 uppercase">{d.side}</td>
@@ -439,6 +486,9 @@ export default function BotPage() {
                   <tr key={d.id} className="border-b border-slate-800/30 hover:bg-slate-800/20">
                     <td className="px-3 py-2">
                       <Link href={`/stock/${d.symbol}`} className="font-medium text-slate-100 hover:text-sky-400">{d.symbol}</Link>
+                      {d.name && d.name !== d.symbol && (
+                        <span className="block text-[10px] text-slate-500">{d.name}</span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-slate-400">{stratLabel[d.strategy] || d.strategy}</td>
                     <td className="px-3 py-2">

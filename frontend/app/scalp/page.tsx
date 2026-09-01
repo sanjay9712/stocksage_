@@ -3,13 +3,17 @@
 import { useState } from "react";
 import useSWR from "swr";
 import Link from "next/link";
-import { fetchScalping, fetchScalpSignal, type ScalpSignal } from "@/lib/api";
+import { fetchScalping, type ScalpSignal, type ScalpNearMiss } from "@/lib/api";
 import StockSearch from "@/components/StockSearch";
 import { StrategyVerificationBadge } from "@/components/StrategyVerificationBadge";
 
 export default function ScalpPage() {
   const { data, isLoading, mutate } = useSWR("scalping", fetchScalping, { refreshInterval: 300000, keepPreviousData: true });
   const signals = data?.signals || [];
+  const summary = data?.scan_summary;
+  const nearMisses = data?.near_misses || [];
+  const [showNearMisses, setShowNearMisses] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
 
   return (
     <div className="space-y-5">
@@ -37,6 +41,68 @@ export default function ScalpPage() {
 
       <StockSearch />
 
+      {/* Scan Summary Banner */}
+      {summary && (
+        <div className="glass-card p-4">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <svg className="w-5 h-5 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8" />
+                <path d="M21 21l-4.35-4.35" />
+              </svg>
+              <span className="text-sm font-medium text-slate-200">Scan Summary</span>
+            </div>
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors"
+            >
+              {showFilters ? "Hide filters" : "Show filters & criteria"}
+            </button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+            <div className="text-center">
+              <div className="text-xl font-bold tabular-nums text-slate-200">{summary.total_scanned}</div>
+              <div className="text-[10px] uppercase tracking-wide text-slate-500">Stocks Scanned</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-bold tabular-nums text-emerald-400">{summary.signals_found}</div>
+              <div className="text-[10px] uppercase tracking-wide text-slate-500">Signals Found</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-bold tabular-nums text-amber-400">{summary.near_misses}</div>
+              <div className="text-[10px] uppercase tracking-wide text-slate-500">Near Misses</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-bold tabular-nums text-slate-500">{summary.data_errors}</div>
+              <div className="text-[10px] uppercase tracking-wide text-slate-500">Data Errors</div>
+            </div>
+          </div>
+
+          {/* Filters & Criteria */}
+          {showFilters && (
+            <div className="mt-4 pt-3 border-t border-slate-800/50 space-y-2 fade-in">
+              <div className="text-xs font-medium text-slate-300 mb-1">Patterns Scanned For ({summary.patterns_scanned.length}):</div>
+              <div className="flex flex-wrap gap-1 mb-3">
+                {summary.patterns_scanned.map((p, i) => (
+                  <span key={i} className="text-[10px] text-slate-400 bg-slate-800/50 rounded px-1.5 py-0.5 border border-slate-700/30">
+                    {p}
+                  </span>
+                ))}
+              </div>
+              <div className="text-xs font-medium text-slate-300 mb-1">Entry Filters:</div>
+              <ul className="space-y-1">
+                {summary.filters.map((f, i) => (
+                  <li key={i} className="text-xs text-slate-400 pl-3 border-l-2 border-slate-700">
+                    <span className="font-medium text-slate-300">{f.name}</span>
+                    <span className="text-slate-500"> — {f.description}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Info banner */}
       <div className="glass-card p-3 border-emerald-800/20">
         <div className="flex items-start gap-2">
@@ -45,8 +111,9 @@ export default function ScalpPage() {
           </svg>
           <p className="text-xs text-slate-400 leading-relaxed">
             Scalps fire when a <span className="text-emerald-400">directional candlestick pattern</span> aligns
-            with the intraday trend (EMA-20) and volume is <span className="text-sky-400">&ge; 1.5&times;</span> average.
+            with the intraday trend (EMA-20) and volume is <span className="text-sky-400">&ge; 0.8&times;</span> average.
             Stop-loss = 1&times;ATR, target = 1.5&times;ATR, R:R &ge; 1.5. Exit within 30 min.
+            Stochastic, MACD, and ADX act as confidence modifiers (not hard blocks).
           </p>
         </div>
       </div>
@@ -75,6 +142,36 @@ export default function ScalpPage() {
           {signals.map((s) => (
             <ScalpCard key={s.symbol} signal={s} />
           ))}
+        </div>
+      )}
+
+      {/* Near-miss stocks */}
+      {nearMisses.length > 0 && (
+        <div className="glass-card p-4">
+          <button
+            onClick={() => setShowNearMisses(!showNearMisses)}
+            className="flex items-center justify-between w-full"
+          >
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+              <span className="text-sm font-medium text-slate-200">
+                Near-Miss Stocks ({nearMisses.length})
+              </span>
+            </div>
+            <span className="text-xs text-slate-500">{showNearMisses ? "Hide" : "Show"}</span>
+          </button>
+          <p className="text-xs text-slate-500 mt-1">
+            These stocks had a directional candlestick pattern but didn&apos;t fully qualify. Shows what&apos;s being tested.
+          </p>
+          {showNearMisses && (
+            <div className="mt-3 space-y-2 fade-in">
+              {nearMisses.map((m) => (
+                <NearMissCard key={m.symbol} miss={m} />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -207,6 +304,40 @@ function ScalpCard({ signal }: { signal: ScalpSignal }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function NearMissCard({ miss }: { miss: ScalpNearMiss }) {
+  const d = miss.diagnostics;
+  return (
+    <div className="rounded-lg border border-slate-800/50 bg-slate-900/30 p-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Link href={`/stock/${miss.symbol}`} className="text-sm font-medium text-slate-300 hover:text-emerald-400 transition-colors">
+            {miss.symbol}
+          </Link>
+          <span className="text-[10px] text-slate-500">{miss.name}</span>
+        </div>
+        <span className="text-[10px] text-slate-600">₹{d?.last_close?.toFixed(2) || "—"}</span>
+      </div>
+      <p className="text-xs text-amber-400/60 mt-1">{miss.reason}</p>
+      <div className="flex flex-wrap gap-2 mt-2 text-[10px] text-slate-500">
+        {d?.trend && (
+          <span className="bg-slate-800/40 rounded px-1.5 py-0.5">Trend: {d.trend}</span>
+        )}
+        {d?.volume_ratio !== undefined && (
+          <span className="bg-slate-800/40 rounded px-1.5 py-0.5">Vol: {d.volume_ratio}x</span>
+        )}
+        {d?.adx !== undefined && d.adx > 0 && (
+          <span className="bg-slate-800/40 rounded px-1.5 py-0.5">ADX: {d.adx}</span>
+        )}
+        {d?.directional_patterns && d.directional_patterns.length > 0 && (
+          <span className="bg-slate-800/40 rounded px-1.5 py-0.5">
+            Patterns: {d.directional_patterns.join(", ")}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

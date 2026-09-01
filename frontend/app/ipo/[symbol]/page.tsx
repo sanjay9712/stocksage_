@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import useSWR from "swr";
-import { fetchIpoDetail, type IpoData, type IpoFinancials, type IpoPeer, type IpoTimeline, type IpoRecommendation } from "@/lib/api";
+import { fetchIpoDetail, type IpoData, type IpoFinancials, type IpoPeer, type IpoTimeline, type IpoRecommendation, type IpoCriteriaItem } from "@/lib/api";
 
 function StatusPill({ status }: { status: string }) {
   const cls =
@@ -70,6 +70,36 @@ function VerdictBanner({ rec, score }: { rec: IpoRecommendation; score: number |
             </ul>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function CriteriaChecklistCard({ rec }: { rec: IpoRecommendation }) {
+  if (!rec.criteria || rec.criteria.length === 0) return null;
+  const metCount = rec.criteria.filter((c) => c.met).length;
+  const totalCount = rec.criteria.length;
+  return (
+    <div className="glass-card p-5">
+      <h2 className="section-title mb-3">
+        Recommendation Criteria — Why {rec.verdict}? ({metCount}/{totalCount} met)
+      </h2>
+      <div className="space-y-2">
+        {rec.criteria.map((c: IpoCriteriaItem, i: number) => (
+          <div key={i} className="flex items-start gap-3 bg-slate-800/40 rounded-lg px-3 py-2.5">
+            <span className={`shrink-0 mt-0.5 text-lg leading-none ${c.met ? "text-emerald-400" : "text-rose-400"}`}>
+              {c.met ? "✓" : "✗"}
+            </span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-semibold text-slate-200 text-sm">{c.factor}</span>
+                <span className="text-slate-400 tabular-nums text-sm">{c.value}</span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">{c.detail}</p>
+              <p className="text-[10px] text-slate-600 mt-0.5">Threshold: {c.threshold}</p>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -457,8 +487,14 @@ function ScoreCard({ ipo }: { ipo: IpoData }) {
 }
 
 export default function IpoDetailPage({ params }: { params: { symbol: string } }) {
-  const symbol = params.symbol;
-  const { data: ipo, error, isLoading } = useSWR(["ipo-detail", symbol], () => fetchIpoDetail(symbol));
+  // Next.js may pass the param still URL-encoded in some cases.
+  const symbol = (() => {
+    try { return decodeURIComponent(params.symbol); } catch { return params.symbol; }
+  })();
+  const { data: ipo, error, isLoading, mutate } = useSWR(["ipo-detail", symbol], () => fetchIpoDetail(symbol), {
+    refreshInterval: 300000, // 5 min — GMP/subscription can update during live IPO
+    keepPreviousData: true,
+  });
 
   if (isLoading) {
     return (
@@ -477,8 +513,11 @@ export default function IpoDetailPage({ params }: { params: { symbol: string } }
       <div className="space-y-4">
         <Link href="/ipo" className="text-sky-400 text-sm hover:underline">← back to IPO Center</Link>
         <div className="glass-card p-8 text-center">
-          <p className="text-slate-400 text-sm">No IPO data found for &ldquo;{symbol}&rdquo;.</p>
-          <p className="text-xs text-slate-600 mt-1">The IPO may have been removed or the data source is temporarily unavailable.</p>
+          <p className="text-rose-300 text-sm mb-1">Failed to load IPO data for &ldquo;{symbol}&rdquo;.</p>
+          <p className="text-xs text-slate-600 mt-1 mb-4">The IPO may have been removed or the data source is temporarily unavailable.</p>
+          <button onClick={() => mutate()} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm">
+            Retry
+          </button>
         </div>
       </div>
     );
@@ -555,6 +594,7 @@ export default function IpoDetailPage({ params }: { params: { symbol: string } }
 
       {/* Recommendation verdict */}
       {rec && <VerdictBanner rec={rec} score={ipo.selection_score} />}
+      {rec && <CriteriaChecklistCard rec={rec} />}
 
       {/* Issue details quick stats */}
       <div className="glass-card p-5">

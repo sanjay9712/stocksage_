@@ -1,7 +1,7 @@
 "use client";
 
 import useSWR from "swr";
-import { fetchProvenStrategies, type StrategyTrackRecord } from "@/lib/api";
+import { fetchPicksVerification, type StrategyTrackRecord } from "@/lib/api";
 
 const STRATEGY_LABELS: Record<string, string> = {
   murphy: "Murphy (Daily)",
@@ -29,7 +29,7 @@ const VERDICT_ICONS: Record<string, string> = {
 };
 
 export function StrategyVerificationBadge({ strategy }: { strategy: string }) {
-  const { data } = useSWR("proven-strategies", () => fetchProvenStrategies(30), {
+  const { data } = useSWR("picks-verification", fetchPicksVerification, {
     refreshInterval: 300000,
   });
   const record = data?.strategies.find((s) => s.strategy === strategy);

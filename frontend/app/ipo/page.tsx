@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import { fetchIpoAll, type IpoData, type IpoResponse, type IpoTimeline, type IpoRecommendation } from "@/lib/api";
+import { fetchIpoAll, type IpoData, type IpoResponse, type IpoTimeline, type IpoRecommendation, type IpoCriteriaItem } from "@/lib/api";
 
 type Board = "mainboard" | "sme";
 type StatusFilter = "all" | "current" | "upcoming" | "recent";
@@ -250,6 +250,36 @@ function ValuationCard({ rec }: { rec: IpoRecommendation }) {
   );
 }
 
+function CriteriaChecklist({ rec }: { rec: IpoRecommendation }) {
+  if (!rec.criteria || rec.criteria.length === 0) return null;
+  const metCount = rec.criteria.filter((c) => c.met).length;
+  const totalCount = rec.criteria.length;
+  return (
+    <div className="lg:col-span-2">
+      <div className="text-[10px] text-slate-500 uppercase mb-2">
+        Recommendation Criteria — Why {rec.verdict}? ({metCount}/{totalCount} met)
+      </div>
+      <div className="space-y-1.5">
+        {rec.criteria.map((c: IpoCriteriaItem, i: number) => (
+          <div key={i} className="flex items-start gap-2 text-xs bg-slate-800/40 rounded-lg px-3 py-2">
+            <span className={`shrink-0 mt-0.5 ${c.met ? "text-emerald-400" : "text-rose-400"}`}>
+              {c.met ? "✓" : "✗"}
+            </span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-medium text-slate-200">{c.factor}</span>
+                <span className="text-slate-400 tabular-nums">{c.value}</span>
+                <span className="text-[10px] text-slate-600">→ {c.threshold}</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">{c.detail}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function TimelineView({ timeline }: { timeline: IpoTimeline | null }) {
   if (!timeline) return null;
   const entries = Object.entries(timeline).filter(([, v]) => v);
@@ -358,6 +388,9 @@ function IpoRow({ ipo }: { ipo: IpoData }) {
 
               {/* Valuation vs peers */}
               {rec && <ValuationCard rec={rec} />}
+
+              {/* Criteria checklist — why this verdict? */}
+              {rec && <CriteriaChecklist rec={rec} />}
 
               {/* Subscription breakdown */}
               <div>
@@ -492,7 +525,7 @@ export default function IpoPage() {
   const [board, setBoard] = useState<Board>("mainboard");
   const [filter, setFilter] = useState<StatusFilter>("all");
 
-  const { data, isLoading } = useSWR<IpoResponse>("ipo-all", fetchIpoAll, {
+  const { data, error, isLoading, mutate } = useSWR<IpoResponse>("ipo-all", fetchIpoAll, {
     refreshInterval: 300000,
     keepPreviousData: true,
   });
@@ -576,8 +609,21 @@ export default function IpoPage() {
 
       {isLoading && !data && (
         <div className="glass-card p-8 text-center">
-          <p className="text-slate-400 text-sm">Loading IPO data...</p>
+          <div className="shimmer h-5 w-48 rounded mx-auto mb-3" />
+          <div className="shimmer h-3 w-full rounded mb-2" />
+          <div className="shimmer h-3 w-2/3 rounded" />
+          <p className="text-slate-400 text-sm mt-3">Loading IPO data...</p>
           <p className="text-xs text-slate-600 mt-1">Fetching from ipocentral.in (~3-5s)</p>
+        </div>
+      )}
+
+      {error && !data && (
+        <div className="text-center py-12">
+          <p className="text-rose-300 mb-2">Failed to load IPO data</p>
+          <p className="text-xs text-slate-500 mb-4">{error instanceof Error ? error.message : "Unknown error"}</p>
+          <button onClick={() => mutate()} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm">
+            Retry
+          </button>
         </div>
       )}
 

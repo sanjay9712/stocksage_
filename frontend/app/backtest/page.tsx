@@ -28,6 +28,9 @@ export default function BacktestPage() {
   const [days, setDays] = useState(365);
   const [capital, setCapital] = useState(100000);
   const [params, setParams] = useState<Record<string, number>>({ fast_period: 9, slow_period: 21 });
+
+  const isUS = /^[A-Z]{1,5}$/.test(symbol.toUpperCase()) && !symbol.includes(".");
+  const currency = isUS ? "$" : "₹";
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -217,7 +220,7 @@ export default function BacktestPage() {
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500">Final Equity</span>
-              <span className="text-slate-200 tabular-nums font-medium">₹{result.final_equity.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
+              <span className="text-slate-200 tabular-nums font-medium">{currency}{result.final_equity.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500">Volatility (ann.)</span>
@@ -243,7 +246,7 @@ export default function BacktestPage() {
                     key={i}
                     className={`w-1 min-w-[2px] ${isProfit ? "bg-emerald-600/60" : "bg-rose-600/60"}`}
                     style={{ height: `${Math.max(heightPct, 2)}%` }}
-                    title={`${e.date}: ₹${e.equity.toFixed(0)}`}
+                    title={`${e.date}: ${currency}${e.equity.toFixed(0)}`}
                   />
                 );
               })}
@@ -259,8 +262,8 @@ export default function BacktestPage() {
                   <tr className="text-slate-500 border-b border-slate-800">
                     <th className="px-3 py-2 text-left font-medium">Entry</th>
                     <th className="px-3 py-2 text-left font-medium">Exit</th>
-                    <th className="px-3 py-2 text-right font-medium">Entry ₹</th>
-                    <th className="px-3 py-2 text-right font-medium">Exit ₹</th>
+                    <th className="px-3 py-2 text-right font-medium">Entry {currency}</th>
+                    <th className="px-3 py-2 text-right font-medium">Exit {currency}</th>
                     <th className="px-3 py-2 text-right font-medium">P&L</th>
                     <th className="px-3 py-2 text-right font-medium">P&L %</th>
                     <th className="px-3 py-2 text-right font-medium">Bars</th>

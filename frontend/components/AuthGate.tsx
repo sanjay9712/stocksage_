@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAuthContext } from "@/lib/auth-context";
 
 /** Pages that require a registered (non-guest) account. */
-const RESTRICTED_PATHS = ["/mf", "/advanced"];
+const RESTRICTED_PATHS = ["/mf", "/advanced", "/bot"];
 
 /**
  * Wraps the app. Redirects to /login if unauthenticated.

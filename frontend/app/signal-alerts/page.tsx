@@ -25,9 +25,10 @@ export default function SignalAlertsPage() {
   const [market, setMarket] = useState<"nse" | "us">("nse");
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
 
   const signalTypesParam = selectedTypes.length > 0 ? selectedTypes.join(",") : undefined;
-  const { data, mutate } = useSWR(
+  const { data, error, isLoading, mutate } = useSWR(
     ["signal-alerts", market, signalTypesParam],
     () => fetchSignalAlerts(market, signalTypesParam),
     { refreshInterval: 60000, keepPreviousData: true }
@@ -41,15 +42,20 @@ export default function SignalAlertsPage() {
 
   const handleRefresh = async () => {
     setRefreshing(true);
+    setRefreshError(null);
     try {
       await refreshSignalAlerts(market);
-      mutate();
+      await mutate();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to refresh signals.";
+      setRefreshError(msg);
     } finally {
       setRefreshing(false);
     }
   };
 
   const signals = data?.signals || [];
+  const currency = market === "nse" ? "₹" : "$";
 
   return (
     <div className="space-y-6">
@@ -71,12 +77,30 @@ export default function SignalAlertsPage() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium"
+            className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium disabled:opacity-40"
           >
-            {refreshing ? "Refreshing..." : "Refresh"}
+            {refreshing ? "Refreshing…" : "Refresh"}
           </button>
         </div>
       </div>
+
+      {refreshError && (
+        <div className="glass-card p-3 border-l-4 border-rose-500/50 flex items-start gap-2">
+          <span className="text-rose-400 text-sm">⚠</span>
+          <p className="text-sm text-rose-300 flex-1">{refreshError}</p>
+          <button onClick={() => setRefreshError(null)} className="text-slate-500 hover:text-slate-300 text-xs">✕</button>
+        </div>
+      )}
+
+      {error && !data && (
+        <div className="text-center py-12">
+          <p className="text-rose-300 mb-2">Failed to load signal alerts</p>
+          <p className="text-xs text-slate-500 mb-4">{error instanceof Error ? error.message : "Unknown error"}</p>
+          <button onClick={() => mutate()} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm">
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Market + Signal Type Filter */}
       <div className="glass-card p-4 space-y-3">
@@ -115,16 +139,27 @@ export default function SignalAlertsPage() {
       </div>
 
       {/* Results */}
-      {signals.length === 0 ? (
+      {isLoading && !data && (
+        <div className="glass-card p-8 text-center">
+          <div className="shimmer h-5 w-48 rounded mx-auto mb-3" />
+          <div className="shimmer h-3 w-full rounded mb-2" />
+          <div className="shimmer h-3 w-2/3 rounded" />
+          <p className="text-xs text-slate-500 mt-3">Scanning {market === "nse" ? "NSE" : "US"} universe for signals…</p>
+        </div>
+      )}
+
+      {signals.length === 0 && !isLoading && (
         <div className="glass-card p-8 text-center">
           <p className="text-sm text-slate-500">
             {data ? "No signals triggered in the current scan." : "Loading signals..."}
           </p>
         </div>
-      ) : (
+      )}
+
+      {signals.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {signals.map((s, i) => (
-            <SignalCard key={`${s.symbol}-${s.signal_type}-${i}`} signal={s} />
+            <SignalCard key={`${s.symbol}-${s.signal_type}-${i}`} signal={s} market={market} />
           ))}
         </div>
       )}
@@ -132,7 +167,8 @@ export default function SignalAlertsPage() {
   );
 }
 
-function SignalCard({ signal }: { signal: SignalAlertEntry }) {
+function SignalCard({ signal, market }: { signal: SignalAlertEntry; market: "nse" | "us" }) {
+  const currency = market === "nse" ? "₹" : "$";
   return (
     <div className="glass-card p-3 space-y-2">
       <div className="flex items-center justify-between">
@@ -155,18 +191,18 @@ function SignalCard({ signal }: { signal: SignalAlertEntry }) {
         <div className="flex items-center gap-3 text-xs pt-1 border-t border-slate-800/50">
           <div>
             <span className="text-slate-600">Entry</span>
-            <span className="ml-1 text-slate-300 tabular-nums">${signal.entry}</span>
+            <span className="ml-1 text-slate-300 tabular-nums">{currency}{signal.entry}</span>
           </div>
           {signal.stop_loss && (
             <div>
               <span className="text-slate-600">SL</span>
-              <span className="ml-1 text-rose-400 tabular-nums">${signal.stop_loss}</span>
+              <span className="ml-1 text-rose-400 tabular-nums">{currency}{signal.stop_loss}</span>
             </div>
           )}
           {signal.target && (
             <div>
               <span className="text-slate-600">Target</span>
-              <span className="ml-1 text-emerald-400 tabular-nums">${signal.target}</span>
+              <span className="ml-1 text-emerald-400 tabular-nums">{currency}{signal.target}</span>
             </div>
           )}
         </div>

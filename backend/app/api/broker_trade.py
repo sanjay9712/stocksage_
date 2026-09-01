@@ -10,7 +10,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.api.auth import require_token
+from app.api.auth import require_user
 from app.db import User
 from app.holdings.factory import get_broker
 
@@ -30,7 +30,7 @@ class PlaceOrderRequest(BaseModel):
 
 
 @router.get("/broker/status")
-async def broker_status(t: User = Depends(require_token)) -> dict:
+async def broker_status(t: User = Depends(require_user)) -> dict:
     """Check if a real broker is connected."""
     from app.config import settings
     connected = bool(
@@ -50,7 +50,7 @@ async def broker_status(t: User = Depends(require_token)) -> dict:
 
 
 @router.get("/broker/positions")
-async def get_positions(t: User = Depends(require_token)) -> dict:
+async def get_positions(t: User = Depends(require_user)) -> dict:
     """Get open positions from the broker."""
     try:
         broker = get_broker()
@@ -75,7 +75,7 @@ async def get_positions(t: User = Depends(require_token)) -> dict:
 
 
 @router.get("/broker/orders")
-async def get_orders(t: User = Depends(require_token)) -> dict:
+async def get_orders(t: User = Depends(require_user)) -> dict:
     """Get today's orders from the broker."""
     try:
         broker = get_broker()
@@ -86,7 +86,7 @@ async def get_orders(t: User = Depends(require_token)) -> dict:
 
 
 @router.get("/broker/funds")
-async def get_funds(t: User = Depends(require_token)) -> dict:
+async def get_funds(t: User = Depends(require_user)) -> dict:
     """Get account funds/balance from the broker."""
     try:
         broker = get_broker()
@@ -103,7 +103,7 @@ async def get_funds(t: User = Depends(require_token)) -> dict:
 
 
 @router.post("/broker/place-order")
-async def place_order(req: PlaceOrderRequest, t: User = Depends(require_token)) -> dict:
+async def place_order(req: PlaceOrderRequest, t: User = Depends(require_user)) -> dict:
     """Place a real order through the broker.
 
     ⚠ This places a REAL order with REAL money when Fyers is configured.
@@ -146,7 +146,7 @@ async def place_order(req: PlaceOrderRequest, t: User = Depends(require_token)) 
 
 
 @router.delete("/broker/cancel-order/{order_id}")
-async def cancel_order(order_id: str, t: User = Depends(require_token)) -> dict:
+async def cancel_order(order_id: str, t: User = Depends(require_user)) -> dict:
     """Cancel an order through the broker."""
     try:
         broker = get_broker()

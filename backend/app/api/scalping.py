@@ -53,34 +53,42 @@ async def scalping_signals(_t: str = Depends(require_token)):
                 daily = await provider.get_daily_history(symbol, 60)
                 intraday = await provider.get_intraday(symbol, settings.intraday_interval, 1)
             except Exception:
-                return None
+                return None, {"symbol": symbol, "reason": "Data fetch failed"}
             if daily.empty or intraday.empty:
-                return None
-            signal = scalp_strat.evaluate_scalp(symbol, daily, intraday)
-            if signal is None:
-                return None
-            return {
-                "symbol": signal.symbol,
-                "name": name_map.get(signal.symbol, signal.symbol),
-                "side": signal.side,
-                "entry": signal.entry,
-                "stop_loss": signal.stop_loss,
-                "target": signal.target,
-                "risk_reward": signal.risk_reward,
-                "confidence": signal.confidence,
-                "last_price": signal.last_price,
-                "atr": signal.atr,
-                "volume_ratio": signal.volume_ratio,
-                "trend": signal.trend,
-                "patterns": signal.patterns,
-                "pattern_bias": signal.pattern_bias,
-                "explanation": signal.explanation,
-                "caveats": signal.caveats,
-                "stochastic_k": signal.stochastic_k,
-                "stochastic_signal": signal.stochastic_signal,
-                "macd_histogram": signal.macd_histogram,
-                "adx_value": signal.adx_value,
+                return None, {"symbol": symbol, "reason": "No data"}
+            debug = scalp_strat.evaluate_scalp_debug(symbol, daily, intraday)
+            if debug["signal"] is not None:
+                signal = debug["signal"]
+                return {
+                    "symbol": signal.symbol,
+                    "name": name_map.get(signal.symbol, signal.symbol),
+                    "side": signal.side,
+                    "entry": signal.entry,
+                    "stop_loss": signal.stop_loss,
+                    "target": signal.target,
+                    "risk_reward": signal.risk_reward,
+                    "confidence": signal.confidence,
+                    "last_price": signal.last_price,
+                    "atr": signal.atr,
+                    "volume_ratio": signal.volume_ratio,
+                    "trend": signal.trend,
+                    "patterns": signal.patterns,
+                    "pattern_bias": signal.pattern_bias,
+                    "explanation": signal.explanation,
+                    "caveats": signal.caveats,
+                    "stochastic_k": signal.stochastic_k,
+                    "stochastic_signal": signal.stochastic_signal,
+                    "macd_histogram": signal.macd_histogram,
+                    "adx_value": signal.adx_value,
+                }, None
+            # No signal — collect as near-miss with diagnostics.
+            near_miss = {
+                "symbol": symbol,
+                "name": name_map.get(symbol, symbol),
+                "reason": debug.get("reason", "Unknown"),
+                "diagnostics": debug.get("diagnostics", {}),
             }
+            return None, near_miss
 
         # Run scans concurrently (bounded to avoid rate limits).
         sem = asyncio.Semaphore(10)
@@ -90,10 +98,34 @@ async def scalping_signals(_t: str = Depends(require_token)):
                 return await _eval(symbol)
 
         results = await asyncio.gather(*[_bounded(s) for s in symbols])
-        signals = [r for r in results if r is not None]
+        signals = []
+        near_misses = []
+        data_errors = 0
+        for sig, miss in results:
+            if sig is not None:
+                signals.append(sig)
+            elif miss is not None:
+                if "No data" in (miss.get("reason") or "") or "failed" in (miss.get("reason") or "").lower():
+                    data_errors += 1
+                else:
+                    near_misses.append(miss)
         # Sort by confidence descending.
         signals.sort(key=lambda s: s["confidence"], reverse=True)
-        return {"signals": signals, "count": len(signals)}
+        # Sort near-misses: those with patterns found first.
+        near_misses.sort(key=lambda m: len(m.get("diagnostics", {}).get("directional_patterns", [])), reverse=True)
+        return {
+            "signals": signals,
+            "count": len(signals),
+            "scan_summary": {
+                "total_scanned": len(symbols),
+                "signals_found": len(signals),
+                "near_misses": len(near_misses),
+                "data_errors": data_errors,
+                "filters": scalp_strat.SCALP_FILTERS,
+                "patterns_scanned": sorted(scalp_strat._DIRECITIONAL_PATTERNS),
+            },
+            "near_misses": near_misses[:15],  # top 15 near-misses for display
+        }
 
     return await cached("scalping:signals", screen_cache_ttl(is_nse_open()), _fetch)
 

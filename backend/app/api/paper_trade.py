@@ -24,7 +24,7 @@ from datetime import date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import select, func, desc, case
 from sqlalchemy.orm import Session
 
 from app.api.auth import require_user
@@ -318,7 +318,7 @@ async def scan_and_log(
                 intraday = await provider.get_intraday(sym, settings.intraday_interval, 1)
             except Exception:
                 return []
-            if daily.empty or intraday.empty:
+            if daily is None or intraday is None or daily.empty or intraday.empty:
                 return []
             results = []
             for strat_name, fn in strategy_fns:
@@ -525,44 +525,43 @@ async def daily_history(
     Returns one row per trading day with: date, signals, new_signals,
     resolved, wins, losses, pnl_pct.
     """
+    # Use SQL GROUP BY for efficiency instead of fetching 5000 rows.
     stmt = (
-        select(PaperTradeSignal)
+        select(
+            PaperTradeSignal.date,
+            func.count().label("total_signals"),
+            func.sum(case((PaperTradeSignal.status == "open", 1), else_=0)).label("open"),
+            func.sum(case((PaperTradeSignal.status != "open", 1), else_=0)).label("resolved"),
+            func.sum(case((PaperTradeSignal.pnl_pct > 0, 1), else_=0)).label("wins"),
+            func.sum(case((PaperTradeSignal.pnl_pct <= 0, 1), else_=0)).label("losses"),
+            func.sum(PaperTradeSignal.pnl_pct).label("pnl_sum"),
+        )
         .where(PaperTradeSignal.user_id == user.id)
-        .order_by(PaperTradeSignal.date.desc())
-        .limit(5000)
     )
     if market:
         stmt = stmt.where(PaperTradeSignal.market == market)
-    rows = db.execute(stmt).scalars().all()
+    stmt = stmt.group_by(PaperTradeSignal.date).order_by(desc(PaperTradeSignal.date)).limit(limit)
+    rows = db.execute(stmt).all()
 
     if not rows:
         return {"history": [], "count": 0}
 
-    # Group by date.
-    by_date: dict[str, list[PaperTradeSignal]] = {}
-    for r in rows:
-        key = str(r.date)
-        by_date.setdefault(key, []).append(r)
-
     history = []
-    for day_str in sorted(by_date.keys(), reverse=True)[:limit]:
-        day_trades = by_date[day_str]
-        resolved = [t for t in day_trades if t.status != "open"]
-        wins = [t for t in resolved if t.pnl_pct is not None and t.pnl_pct > 0]
-        losses = [t for t in resolved if t.pnl_pct is not None and t.pnl_pct <= 0]
-        pnls = [t.pnl_pct for t in resolved if t.pnl_pct is not None]
-        open_count = sum(1 for t in day_trades if t.status == "open")
-
+    for r in rows:
+        resolved = r.resolved or 0
+        wins = r.wins or 0
+        losses = r.losses or 0
+        pnl_sum = r.pnl_sum or 0.0
         history.append({
-            "date": day_str,
-            "total_signals": len(day_trades),
-            "open": open_count,
-            "resolved": len(resolved),
-            "wins": len(wins),
-            "losses": len(losses),
-            "win_rate": round(len(wins) / len(resolved) * 100, 1) if resolved else 0.0,
-            "pnl_pct": round(sum(pnls), 2) if pnls else 0.0,
-            "avg_pnl_pct": round(sum(pnls) / len(pnls), 2) if pnls else 0.0,
+            "date": str(r.date),
+            "total_signals": r.total_signals,
+            "open": r.open or 0,
+            "resolved": resolved,
+            "wins": wins,
+            "losses": losses,
+            "win_rate": round(wins / resolved * 100, 1) if resolved > 0 else 0.0,
+            "pnl_pct": round(pnl_sum, 2),
+            "avg_pnl_pct": round(pnl_sum / resolved, 2) if resolved > 0 else 0.0,
         })
 
     return {"history": history, "count": len(history)}

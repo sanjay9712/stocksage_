@@ -505,6 +505,91 @@ def recommend_ipo(ipo: dict, score: float | None = None) -> dict:
     if not pros and not cons:
         verdict = "Insufficient Data"
 
+    # --- Criteria checklist — explains exactly why this verdict was reached ---
+    criteria = []
+    # Score threshold
+    criteria.append({
+        "factor": "Selection Score",
+        "value": f"{score:.0f}/100",
+        "threshold": "≥65 for Apply, <35 for Avoid",
+        "met": score >= 65 if verdict == "Apply" else (score >= 35 if verdict == "Consider" else True),
+        "detail": f"Score of {score:.0f} {'meets' if score >= 65 else 'falls below'} the Apply threshold (65)." if verdict != "Avoid" else f"Score of {score:.0f} is below the Avoid threshold (35).",
+    })
+    # Critical flags
+    criteria.append({
+        "factor": "Red Flags",
+        "value": f"{len(critical_flags)} found",
+        "threshold": "0 for Apply",
+        "met": len(critical_flags) == 0,
+        "detail": "; ".join(critical_flags) if critical_flags else "No critical red flags detected.",
+    })
+    # Subscription
+    if sub.get("total") is not None:
+        total_sub = sub["total"]
+        criteria.append({
+            "factor": "Subscription Demand",
+            "value": f"{total_sub:.1f}x",
+            "threshold": "≥3x healthy, ≥10x strong",
+            "met": total_sub >= 3,
+            "detail": f"Overall subscription is {total_sub:.1f}x." + (" Strong demand." if total_sub >= 10 else (" Healthy." if total_sub >= 3 else " Weak — below 3x.")),
+        })
+    # GMP
+    if gmp.get("premium_pct") is not None:
+        pct = gmp["premium_pct"]
+        criteria.append({
+            "factor": "Grey Market Premium (GMP)",
+            "value": f"{pct:+.1f}%",
+            "threshold": "≥+5% positive, ≥+15% strong",
+            "met": pct >= 5,
+            "detail": f"GMP is {pct:+.1f}%." + (" Strong grey-market demand." if pct >= 15 else (" Positive." if pct >= 5 else (" Negative." if pct < 0 else " Neutral."))),
+        })
+    # Anchor investors
+    if anchor.get("amount_crs"):
+        anchor_pct = (anchor["amount_crs"] / ipo.get("issue_size_crs", 1)) * 100 if ipo.get("issue_size_crs") else 0
+        criteria.append({
+            "factor": "Anchor Investors",
+            "value": f"₹{anchor['amount_crs']:.0f} Cr ({anchor_pct:.0f}% of issue)",
+            "threshold": "≥30% high backing",
+            "met": anchor_pct >= 30,
+            "detail": f"Anchor investors committed ₹{anchor['amount_crs']:.0f} Cr ({anchor_pct:.0f}% of issue)." + (" High institutional backing." if anchor_pct >= 30 else " Moderate backing."),
+        })
+    # Valuation vs peers
+    if val["discount_to_peers_pct"] is not None:
+        d = val["discount_to_peers_pct"]
+        criteria.append({
+            "factor": "Valuation vs Peers",
+            "value": f"{val['ipo_pe']:.1f} PE vs {val['peer_pe_avg']:.1f} peer avg",
+            "threshold": "≤0% (discount) is good",
+            "met": d <= 0,
+            "detail": f"Priced at a {abs(d):.0f}% {'discount' if d < 0 else 'premium'} to peer average PE.",
+        })
+    # Financials — profitability
+    if latest_ni is not None:
+        criteria.append({
+            "factor": "Profitability",
+            "value": "Profitable" if latest_ni > 0 else "Loss-making",
+            "threshold": "Profitable for Apply",
+            "met": latest_ni > 0,
+            "detail": "Company is profitable (positive net income)." if latest_ni > 0 else "Company is loss-making in the latest reported year.",
+        })
+    # Issue structure
+    if struct["fresh_pct"] is not None:
+        criteria.append({
+            "factor": "Issue Structure",
+            "value": f"{struct['fresh_pct']:.0f}% fresh, {struct['ofs_pct']:.0f}% OFS" if struct['ofs_pct'] is not None else f"{struct['fresh_pct']:.0f}% fresh",
+            "threshold": "High fresh % is good",
+            "met": struct["fresh_pct"] >= 50,
+            "detail": f"Fresh issue is {struct['fresh_pct']:.0f}% of the total." + (" Most funds go to the company." if struct["fresh_pct"] >= 75 else (" Promoter-exit heavy." if struct.get("ofs_pct", 0) and struct["ofs_pct"] > 50 else " Balanced structure.")),
+        })
+    # Board type
+    criteria.append({
+        "factor": "Board Type",
+        "value": board or "Unknown",
+        "threshold": "Mainboard preferred",
+        "met": board == "mainboard",
+        "detail": "Mainboard IPO — stricter SEBI compliance." if board == "mainboard" else "SME board — higher risk, lower liquidity.",
+    })
+
     # --- Summary paragraph ---
     parts = []
     if struct["fresh_pct"] is not None:
@@ -527,4 +612,5 @@ def recommend_ipo(ipo: dict, score: float | None = None) -> dict:
         "summary": summary,
         "issue_structure": struct,
         "valuation": val,
+        "criteria": criteria,
     }

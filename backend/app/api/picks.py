@@ -85,7 +85,8 @@ async def picks_today(db: Session = Depends(get_db), _t: str = Depends(require_t
 async def pick_detail(symbol: str, db: Session = Depends(get_db), _t: str = Depends(require_token)):
     row = db.execute(
         select(PickRow).where(PickRow.date == today_ist(), PickRow.symbol == symbol.upper())
-    ).scalar_one_or_none()
+        .order_by(PickRow.confidence.desc())
+    ).scalars().first()
     if not row:
         raise HTTPException(status_code=404, detail="No pick for this symbol today")
     return _row_to_pick(row)
@@ -224,7 +225,8 @@ async def search_stock(q: str, _t: str = Depends(require_token)):
         db = next(get_db())
         row = db.execute(
             select(PickRow).where(PickRow.date == today_ist(), PickRow.symbol == symbol)
-        ).scalar_one_or_none()
+            .order_by(PickRow.confidence.desc())
+        ).scalars().first()
         pick = _row_to_pick(row) if row else None
         return {
             "symbol": symbol,
@@ -264,60 +266,8 @@ async def stock_details(symbol: str, _t: str = Depends(require_token)):
 
     symbol = symbol.strip().upper().replace(".NS", "").replace("NSE:", "")
 
-    async def _fetch():
-        provider = get_provider()
-        # Fetch daily history for investment levels.
-        try:
-            daily = await provider.get_daily_history(symbol, 252)
-        except Exception:
-            daily = pd.DataFrame()
-        # Fetch live quote for current price + change.
-        live_quote = None
-        try:
-            quote = await provider.get_quote(symbol)
-            if quote and quote.price > 0:
-                prev = quote.prev_close or (float(daily["Close"].iloc[-2]) if len(daily) >= 2 else None)
-                change = round(quote.price - prev, 2) if prev else None
-                change_pct = round((quote.price - prev) / prev * 100, 2) if prev else None
-                live_quote = {
-                    "price": round(quote.price, 2),
-                    "prev_close": round(prev, 2) if prev else None,
-                    "change": change,
-                    "change_pct": change_pct,
-                    "day_high": quote.day_high,
-                    "day_low": quote.day_low,
-                    "volume": quote.volume,
-                }
-        except Exception:
-            pass
-        # Fetch fundamentals + financials + recommendations (cached).
-        detail = await get_stock_detail(symbol)
-        # Compute investment entry/exit levels.
-        levels = compute_invest_levels(
-            daily, symbol,
-            high_52w=detail["fundamentals"].get("52w_high"),
-            low_52w=detail["fundamentals"].get("52w_low"),
-        )
-        # Check for today's intraday pick.
-        db = next(get_db())
-        row = db.execute(
-            select(PickRow).where(PickRow.date == today_ist(), PickRow.symbol == symbol)
-        ).scalar_one_or_none()
-        intraday_pick = _row_to_pick(row) if row else None
-        return {
-            "symbol": symbol,
-            "fundamentals": detail["fundamentals"],
-            "financials": detail["financials"],
-            "recommendations": detail["recommendations"],
-            "invest_levels": levels,
-            "live_quote": live_quote,
-            "intraday_pick": intraday_pick.model_dump() if intraday_pick else None,
-        }
-
     # Fundamentals/financials are slow to fetch and change slowly — cache 10 min.
     # Live quote is always fetched fresh (no cache).
-    from app.providers.factory import get_provider
-
     async def _fetch_fundamentals():
         return await get_stock_detail(symbol)
 
@@ -366,7 +316,8 @@ async def stock_details(symbol: str, _t: str = Depends(require_token)):
     db = next(get_db())
     row = db.execute(
         select(PickRow).where(PickRow.date == today_ist(), PickRow.symbol == symbol)
-    ).scalar_one_or_none()
+        .order_by(PickRow.confidence.desc())
+    ).scalars().first()
     intraday_pick = _row_to_pick(row) if row else None
 
     return {

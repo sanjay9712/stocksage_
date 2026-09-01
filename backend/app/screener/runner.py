@@ -181,9 +181,7 @@ def _persist_picks(picks: list[Pick]) -> None:
     try:
         # Replace today's picks for these symbols.
         for pick in picks:
-            existing = db.query(PickRow).filter_by(date=pick.date, symbol=pick.symbol).first()
-            if existing:
-                db.delete(existing)
+            db.query(PickRow).filter_by(date=pick.date, symbol=pick.symbol).delete()
             row = PickRow(
                 date=pick.date,
                 symbol=pick.symbol,

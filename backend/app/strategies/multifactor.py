@@ -219,6 +219,9 @@ def quality_score(fundamentals: dict) -> float:
 # quality filters out junk, value avoids overpaying.
 WEIGHTS = {"momentum": 0.50, "quality": 0.30, "value": 0.20}
 
+# Long-term investing preset: quality-first, value-conscious, momentum as confirmation.
+LONG_TERM_WEIGHTS = {"momentum": 0.30, "quality": 0.40, "value": 0.30}
+
 
 def composite_score(
     daily: pd.DataFrame | None,

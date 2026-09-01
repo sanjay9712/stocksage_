@@ -128,6 +128,7 @@ def _score_financials(ipo: dict) -> float:
 
     score = 0.0
     components = 0
+    max_scores = 0.0
 
     # Revenue growth: compare latest vs earliest year.
     if fin and "Revenue" in fin:
@@ -145,6 +146,7 @@ def _score_financials(ipo: dict) -> float:
                 else:
                     score += 0.0
                 components += 1
+                max_scores += 1.5
 
     # Profitability: Net Income positive in latest year.
     if fin and "Net Income" in fin:
@@ -155,6 +157,7 @@ def _score_financials(ipo: dict) -> float:
             if latest_ni > 0:
                 score += 1.0
             components += 1
+            max_scores += 1.0
 
     # Margin trend: improving margins.
     if fin and "Margin (%)" in fin:
@@ -166,6 +169,7 @@ def _score_financials(ipo: dict) -> float:
             elif mar_values[-1] > 0:
                 score += 0.25  # at least positive
             components += 1
+            max_scores += 0.5
 
     # Debt/Equity: lower is better.
     if ratios and "Debt/Equity" in ratios:
@@ -178,6 +182,7 @@ def _score_financials(ipo: dict) -> float:
             elif latest_de < 1.0:
                 score += 0.5
             components += 1
+            max_scores += 1.0
 
     # RONW: higher is better.
     if ratios and "RONW (%)" in ratios:
@@ -190,13 +195,39 @@ def _score_financials(ipo: dict) -> float:
             elif latest_ronw > 10:
                 score += 0.5
             components += 1
+            max_scores += 1.0
+
+    # ROCE: higher is better.
+    if ratios and "ROCE (%)" in ratios:
+        roce = ratios["ROCE (%)"]
+        roce_values = [v for v in roce.values() if isinstance(v, (int, float))]
+        if roce_values:
+            latest_roce = roce_values[-1]
+            if latest_roce > 20:
+                score += 1.0
+            elif latest_roce > 10:
+                score += 0.5
+            components += 1
+            max_scores += 1.0
+
+    # EBITDA margin: higher is better.
+    if ratios and "EBITDA (%)" in ratios:
+        ebitda = ratios["EBITDA (%)"]
+        ebitda_values = [v for v in ebitda.values() if isinstance(v, (int, float))]
+        if ebitda_values:
+            latest_ebitda = ebitda_values[-1]
+            if latest_ebitda > 10:
+                score += 1.0
+            elif latest_ebitda > 5:
+                score += 0.5
+            components += 1
+            max_scores += 1.0
 
     if components == 0:
         return 2.5
 
-    # Normalize to 0-5 scale.
-    max_possible = components * 1.0  # each component can contribute up to ~1.5
-    normalized = min((score / max_possible) * 5.0, 5.0) if max_possible > 0 else 2.5
+    # Normalize to 0-5 scale using actual max possible per component.
+    normalized = min((score / max_scores) * 5.0, 5.0) if max_scores > 0 else 2.5
     return round(normalized, 2)
 
 
@@ -468,6 +499,31 @@ def recommend_ipo(ipo: dict, score: float | None = None) -> dict:
         elif latest_ronw < 10:
             cons.append(f"Low return on net worth ({latest_ronw:.1f}%) — below-average capital efficiency.")
 
+    # ROCE
+    latest_roce = _latest_value(ratios, "ROCE (%)") if ratios else None
+    if latest_roce is not None:
+        if latest_roce > 20:
+            pros.append(f"Strong ROCE ({latest_roce:.1f}%) — efficient capital employed.")
+        elif latest_roce < 10:
+            cons.append(f"Low ROCE ({latest_roce:.1f}%) — capital efficiency below average.")
+
+    # EBITDA margin
+    latest_ebitda = _latest_value(ratios, "EBITDA (%)") if ratios else None
+    if latest_ebitda is not None:
+        if latest_ebitda > 10:
+            pros.append(f"Healthy EBITDA margin ({latest_ebitda:.1f}%).")
+        elif latest_ebitda < 5:
+            cons.append(f"Thin EBITDA margin ({latest_ebitda:.1f}%).")
+
+    # NAV (book value per share)
+    latest_nav = _latest_value(ratios, "NAV") if ratios else None
+    if latest_nav is not None and ipo.get("price_high") and latest_nav > 0:
+        pb = ipo["price_high"] / latest_nav
+        if pb > 5:
+            cons.append(f"High P/B ratio ({pb:.1f}x) — priced well above book value (NAV ₹{latest_nav:.2f}).")
+        elif pb <= 3:
+            pros.append(f"Reasonable P/B ratio ({pb:.1f}x) — close to book value (NAV ₹{latest_nav:.2f}).")
+
     # --- Valuation vs peers ---
     val = _valuation_vs_peers(ipo)
     if val["discount_to_peers_pct"] is not None:
@@ -572,6 +628,71 @@ def recommend_ipo(ipo: dict, score: float | None = None) -> dict:
             "met": latest_ni > 0,
             "detail": "Company is profitable (positive net income)." if latest_ni > 0 else "Company is loss-making in the latest reported year.",
         })
+    # RONW (Return on Net Worth = ROE)
+    if latest_ronw is not None:
+        criteria.append({
+            "factor": "ROE (RONW)",
+            "value": f"{latest_ronw:.1f}%",
+            "threshold": "≥20% strong, ≥10% acceptable",
+            "met": latest_ronw >= 15,
+            "detail": f"Return on Net Worth is {latest_ronw:.1f}%." + (" Strong equity efficiency." if latest_ronw >= 20 else (" Acceptable." if latest_ronw >= 10 else " Below average capital efficiency.")),
+        })
+    # ROCE (Return on Capital Employed)
+    if latest_roce is not None:
+        criteria.append({
+            "factor": "ROCE",
+            "value": f"{latest_roce:.1f}%",
+            "threshold": "≥20% strong, ≥15% acceptable",
+            "met": latest_roce >= 15,
+            "detail": f"Return on Capital Employed is {latest_roce:.1f}%." + (" Efficient capital deployment." if latest_roce >= 20 else (" Acceptable." if latest_roce >= 15 else " Below average.")),
+        })
+    # Debt/Equity
+    if latest_de is not None:
+        criteria.append({
+            "factor": "Debt/Equity",
+            "value": f"{latest_de:.2f}",
+            "threshold": "≤0.5 healthy, ≤1.0 acceptable",
+            "met": latest_de <= 1.0,
+            "detail": f"Debt-to-Equity ratio is {latest_de:.2f}." + (" Healthy balance sheet." if latest_de < 0.5 else (" Acceptable leverage." if latest_de <= 1.0 else " Highly leveraged.")),
+        })
+    # EBITDA margin
+    if latest_ebitda is not None:
+        criteria.append({
+            "factor": "EBITDA Margin",
+            "value": f"{latest_ebitda:.1f}%",
+            "threshold": "≥10% healthy, ≥5% acceptable",
+            "met": latest_ebitda >= 5,
+            "detail": f"EBITDA margin is {latest_ebitda:.1f}%." + (" Healthy operating profitability." if latest_ebitda >= 10 else (" Thin margins." if latest_ebitda < 5 else " Acceptable margins.")),
+        })
+    # PAT margin (from financials table — "Margin (%)" column)
+    latest_pat_margin = _latest_value(fin, "Margin (%)") if fin else None
+    if latest_pat_margin is not None:
+        criteria.append({
+            "factor": "PAT Margin",
+            "value": f"{latest_pat_margin:.1f}%",
+            "threshold": "≥10% healthy, ≥5% acceptable",
+            "met": latest_pat_margin >= 5,
+            "detail": f"Net profit margin is {latest_pat_margin:.1f}%." + (" Healthy profitability." if latest_pat_margin >= 10 else (" Thin." if latest_pat_margin < 5 else " Acceptable.")),
+        })
+    # NAV (Net Asset Value per share)
+    if latest_nav is not None:
+        criteria.append({
+            "factor": "NAV",
+            "value": f"₹{latest_nav:.2f}",
+            "threshold": "Positive & growing",
+            "met": latest_nav > 0,
+            "detail": f"Net Asset Value per share is ₹{latest_nav:.2f}." + (" Positive book value." if latest_nav > 0 else " Negative net worth — concern."),
+        })
+    # Price to Book (P/B) — computed from price_high / NAV
+    if latest_nav is not None and latest_nav > 0 and ipo.get("price_high"):
+        pb = ipo["price_high"] / latest_nav
+        criteria.append({
+            "factor": "Price to Book (P/B)",
+            "value": f"{pb:.1f}x",
+            "threshold": "≤3 reasonable, ≤5 premium",
+            "met": pb <= 5,
+            "detail": f"P/B is {pb:.1f}x (₹{ipo['price_high']:.0f} / NAV ₹{latest_nav:.2f})." + (" Reasonably valued." if pb <= 3 else (" Premium valuation." if pb <= 5 else " Highly overvalued vs book value.")),
+        })
     # Issue structure
     if struct["fresh_pct"] is not None:
         criteria.append({
@@ -604,6 +725,21 @@ def recommend_ipo(ipo: dict, score: float | None = None) -> dict:
     if critical_flags:
         summary += " Key concern: " + "; ".join(critical_flags) + "."
 
+    # --- Financial metrics summary (for comparison table) ---
+    pb_ratio = None
+    if latest_nav and latest_nav > 0 and ipo.get("price_high"):
+        pb_ratio = round(ipo["price_high"] / latest_nav, 2)
+
+    fin_metrics = {
+        "roe": round(latest_ronw, 2) if latest_ronw is not None else None,
+        "roce": round(latest_roce, 2) if latest_roce is not None else None,
+        "debt_equity": round(latest_de, 2) if latest_de is not None else None,
+        "ebitda_margin": round(latest_ebitda, 2) if latest_ebitda is not None else None,
+        "pat_margin": round(latest_pat_margin, 2) if latest_pat_margin is not None else None,
+        "nav": round(latest_nav, 2) if latest_nav is not None else None,
+        "price_to_book": pb_ratio,
+    }
+
     return {
         "verdict": verdict,
         "pros": pros,
@@ -613,4 +749,5 @@ def recommend_ipo(ipo: dict, score: float | None = None) -> dict:
         "issue_structure": struct,
         "valuation": val,
         "criteria": criteria,
+        "financial_metrics": fin_metrics,
     }

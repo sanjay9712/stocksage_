@@ -693,6 +693,47 @@ export const fetchNseStockScreen = () => apiFetch<ScreenResponse<NseStockScreen>
 export const refreshNseStockScreen = () =>
   apiFetch<{ ok: boolean }>("/api/stock/screen/refresh", { method: "POST" });
 
+// ---------------------------------------------------------------------------
+// Long-term investing — sector-diversified portfolio picks
+// ---------------------------------------------------------------------------
+
+export interface LongTermPick extends NseStockScreen {
+  revenue_growth: number | null;
+  earnings_growth: number | null;
+  analyst_consensus: string | null;
+  "52w_high": number | null;
+  "52w_low": number | null;
+  range_position: number | null;
+}
+
+export interface SectorPick {
+  sector: string;
+  avg_composite: number;
+  stock_count: number;
+  top_stock: LongTermPick;
+  runner_up: LongTermPick | null;
+}
+
+export interface LongTermPicksResponse {
+  picks: SectorPick[];
+  portfolio: {
+    stock_count: number;
+    sectors: string[];
+    avg_composite: number;
+    avg_sharpe: number;
+    avg_cagr: number;
+    weights: Record<string, number>;
+  };
+  refreshed_at: string;
+  market_open: boolean;
+  market_status: string;
+}
+
+export const fetchLongTermPicks = () =>
+  apiFetch<LongTermPicksResponse>("/api/long-term/picks", undefined, 120_000);
+export const refreshLongTermPicks = () =>
+  apiFetch<{ ok: boolean }>("/api/long-term/picks/refresh", { method: "POST" });
+
 // Stock detail page
 export interface StockFundamentals {
   symbol: string;
@@ -1801,6 +1842,16 @@ export interface IpoValuation {
   discount_to_peers_pct: number | null;
 }
 
+export interface IpoFinancialMetrics {
+  roe: number | null;
+  roce: number | null;
+  debt_equity: number | null;
+  ebitda_margin: number | null;
+  pat_margin: number | null;
+  nav: number | null;
+  price_to_book: number | null;
+}
+
 export interface IpoCriteriaItem {
   factor: string;
   value: string;
@@ -1818,6 +1869,7 @@ export interface IpoRecommendation {
   issue_structure: IpoIssueStructure;
   valuation: IpoValuation;
   criteria: IpoCriteriaItem[];
+  financial_metrics: IpoFinancialMetrics | null;
 }
 
 export interface IpoTimeline {

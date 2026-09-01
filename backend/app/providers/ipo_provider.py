@@ -240,14 +240,20 @@ def _parse_detail_page(html: str, company_name: str, link: str | None) -> dict:
         "ipo_timeline": None,
     }
 
-    # Table 0: IPO basics
-    if len(tables) > 0:
-        for row in tables[0]:
-            if len(row) < 2:
-                continue
-            key = row[0].lower().rstrip(":").strip()
-            val = row[1].strip()
-            if "issue price" in key or "price band" in key:
+    # IPO basics may be in table 0 or table 1 depending on page structure.
+    # Search the first few tables for key-value pairs.
+    basics_keys = {
+        "issue price", "price band", "fresh issue", "offer for sale", "ofs",
+        "total", "lot size", "minimum bid", "face value", "listing on",
+    }
+
+    def _process_basics_row(row: list[str]):
+        if len(row) < 2:
+            return
+        key = row[0].lower().rstrip(":").strip()
+        val = row[1].strip()
+        if "issue price" in key or "price band" in key:
+            if not data["price_band"]:
                 data["price_band"] = val
                 prices = re.findall(r"[\d,]+\.?\d*", val)
                 if len(prices) >= 2:
@@ -256,69 +262,114 @@ def _parse_detail_page(html: str, company_name: str, link: str | None) -> dict:
                 elif len(prices) == 1:
                     data["price_low"] = float(prices[0].replace(",", ""))
                     data["price_high"] = float(prices[0].replace(",", ""))
-            elif "fresh issue" in key:
+        elif "fresh issue" in key:
+            if data["fresh_issue_crs"] is None:
                 data["fresh_issue_crs"] = _parse_issue_size(val)
-            elif "offer for sale" in key or "ofs" in key:
+        elif "offer for sale" in key or "ofs" in key:
+            if not data["offer_for_sale"]:
                 data["offer_for_sale"] = val
                 data["ofs_amount_crs"] = _parse_ofs_amount(val)
-            elif "total" in key and "size" in key:
+        elif "total" in key and "size" in key:
+            if data["issue_size_crs"] is None:
                 data["issue_size_crs"] = _parse_issue_size(val)
-            elif "lot size" in key or "minimum bid" in key:
+        elif "lot size" in key or "minimum bid" in key:
+            if data["lot_size"] is None:
                 m = re.search(r"(\d[\d,]*)", val)
                 if m:
                     data["lot_size"] = int(m.group(1).replace(",", ""))
                 # Also try to get lot value
-                m2 = re.search(r"₹?\s*([\d,]+(?:\.\d+)?)", val)
-                if m2:
-                    # Look for the amount in parentheses
-                    m3 = re.search(r"\(₹?\s*([\d,]+(?:\.\d+)?)\)", val)
-                    if m3:
-                        data["lot_value"] = float(m3.group(1).replace(",", ""))
-            elif "face value" in key:
+                m3 = re.search(r"\(₹?\s*([\d,]+(?:\.\d+)?)\)", val)
+                if m3:
+                    data["lot_value"] = float(m3.group(1).replace(",", ""))
+        elif "face value" in key:
+            if data["face_value"] is None:
                 m = re.search(r"[\d,]+", val)
                 if m:
                     data["face_value"] = float(m.group().replace(",", ""))
-            elif "listing on" in key:
+        elif "listing on" in key:
+            if not data["listing_at"]:
                 data["listing_at"] = val
-            elif "pre-issue" in key or "pre issue" in key:
-                # Pre-issue shares — not critical, skip
-                pass
+
+    for ti in range(min(3, len(tables))):
+        for row in tables[ti]:
+            _process_basics_row(row)
 
     # Table 1: Investor category quotas
-    if len(tables) > 1:
-        quota: dict = {}
-        for row in tables[1][1:]:  # skip header
-            if len(row) >= 2:
-                cat = row[0].strip().upper()
-                pct = _parse_number(row[1])
-                if cat and pct is not None:
-                    quota[cat] = pct
-        if quota:
-            data["quota_percent"] = quota
+    # Search first few tables for quota data (QIB/NII/Retail percentages).
+    for ti in range(1, min(4, len(tables))):
+        table = tables[ti]
+        if not table or not table[0]:
+            continue
+        header_text = " ".join(c.lower() for c in table[0])
+        if (("qib" in header_text or "retail" in header_text or "nii" in header_text) and "quota" in header_text) or \
+           ("category" in header_text and ("qib" in header_text or "retail" in header_text)):
+            quota: dict = {}
+            for row in table[1:]:  # skip header
+                if len(row) >= 2:
+                    cat = row[0].strip().upper()
+                    pct = _parse_number(row[1])
+                    if cat and pct is not None:
+                        quota[cat] = pct
+            if quota:
+                data["quota_percent"] = quota
+            break
 
-    # Table 2: Financials (Revenue, Expenses, Net Income, Margin)
-    if len(tables) > 2:
-        fin = _parse_financial_table(tables[2])
-        if fin:
-            data["financials"] = fin
+    # Financial tables — detect by header content, not fixed index.
+    # Table positions shift when a live subscription table is present (open IPOs)
+    # or when pages have extra introductory tables.
+    for ti in range(2, min(7, len(tables))):
+        table = tables[ti]
+        if not table or len(table) < 2:
+            continue
+        header_text = " ".join(c.lower() for c in table[0])
+        first_col = table[0][0].lower() if table[0] and table[0][0] else ""
 
-    # Table 3: Per-share metrics (EPS, PE ratio, Price/Sales, Current Ratio)
-    if len(tables) > 3:
-        metrics = _parse_financial_table(tables[3])
-        if metrics:
-            data["per_share_metrics"] = metrics
+        # Financials: header contains "Revenue" or "Expenses" or "Net Income"
+        if not data["financials"] and any(k in header_text for k in ("revenue", "expenses", "net income", "profit")):
+            fin = _parse_financial_table(table)
+            if fin:
+                data["financials"] = fin
+                continue
 
-    # Table 4: Return ratios (RONW, NAV, ROCE, EBITDA, Debt/Equity)
-    if len(tables) > 4:
-        ratios = _parse_financial_table(tables[4])
-        if ratios:
-            data["return_ratios"] = ratios
+        # Per-share metrics: header contains "EPS" or "PE Ratio" or "Price/Sales"
+        if not data["per_share_metrics"] and any(k in header_text for k in ("eps", "pe ratio", "p/e", "price/sales", "price to sales")):
+            metrics = _parse_financial_table(table)
+            if metrics:
+                data["per_share_metrics"] = metrics
+                continue
 
-    # Table 5: Anchor investor data
-    if len(tables) > 5:
-        anchor: dict = {}
-        for row in tables[5]:
-            if len(row) >= 2:
+        # Return ratios: header contains "RONW" or "ROCE" or "EBITDA" or "Debt/Equity" or "NAV"
+        if not data["return_ratios"] and any(k in header_text for k in ("ronw", "roce", "ebitda", "debt/equity", "nav")):
+            ratios = _parse_financial_table(table)
+            if ratios:
+                data["return_ratios"] = ratios
+                continue
+
+        # Also check first column for return ratio metric names
+        if not data["return_ratios"] and any(k in first_col for k in ("ronw", "roce", "ebitda", "debt/equity", "nav")):
+            ratios = _parse_financial_table(table)
+            if ratios:
+                data["return_ratios"] = ratios
+                continue
+
+    # Anchor investor data — detect by "bid date" or "anchor" in table text.
+    for ti in range(2, min(8, len(tables))):
+        table = tables[ti]
+        if not table or len(table) < 1:
+            continue
+        all_text = " ".join(c.lower() for row in table for c in row)
+        if "anchor" in all_text or "bid date" in all_text or "lock-in" in all_text or "lock in" in all_text:
+            # Make sure this isn't the GMP, subscription, or financial table.
+            if "gmp" in all_text or "grey market" in all_text:
+                continue
+            if "subscription" in all_text or "applied" in all_text:
+                continue
+            if any(k in all_text for k in ("revenue", "expenses", "ronw", "roce", "ebitda", "debt/equity", "eps", "pe ratio")):
+                continue
+            anchor: dict = {}
+            for row in table:
+                if len(row) < 2:
+                    continue
                 key = row[0].strip()
                 val = row[1].strip()
                 if "bid date" in key.lower():
@@ -328,44 +379,52 @@ def _parse_detail_page(html: str, company_name: str, link: str | None) -> dict:
                 elif "portion" in key.lower() or "amount" in key.lower():
                     anchor["amount_crs"] = _parse_issue_size(val)
                 elif "lock-in" in key.lower() or "lock in" in key.lower():
-                    if "50%" in key or "50%" in val or "30 days" in key.lower() or "30 days" in key.lower():
+                    if "50%" in key or "50%" in val or "30 days" in key.lower() or "30 days" in val.lower():
                         anchor["lock_in_50pct_date"] = _parse_date_text(val)
                     elif "90 days" in key.lower() or "remaining" in key.lower():
                         anchor["lock_in_90pct_date"] = _parse_date_text(val)
-        if anchor:
-            data["anchor_investors"] = anchor
+            if anchor:
+                data["anchor_investors"] = anchor
+            break
 
-    # Table 6: GMP history
-    if len(tables) > 6:
-        gmp_history: list[dict] = []
-        latest_gmp: dict | None = None
-        for row in tables[6][1:]:  # skip header
-            if len(row) >= 2:
-                date_str = row[0].strip()
-                gmp_val = _parse_number(row[1])
-                sauda = _parse_number(row[2]) if len(row) >= 3 else None
-                entry = {"date": date_str, "gmp": gmp_val, "subject_to_sauda": sauda}
-                gmp_history.append(entry)
-                if latest_gmp is None and gmp_val is not None:
-                    latest_gmp = entry
-        if gmp_history:
-            data["gmp_history"] = gmp_history
-            # Set current GMP from the latest entry.
-            if latest_gmp and latest_gmp["gmp"] is not None:
-                premium = latest_gmp["gmp"]
-                pct = None
-                if data["price_high"] and data["price_high"] > 0:
-                    pct = round((premium / data["price_high"]) * 100, 2)
-                data["gmp"] = {
-                    "premium": premium,
-                    "premium_pct": pct,
-                    "last_updated": datetime.now(timezone.utc).isoformat(),
-                }
+    # GMP history — detect by "Subject to Sauda" or "GMP" in header.
+    for ti in range(3, min(10, len(tables))):
+        table = tables[ti]
+        if not table or not table[0]:
+            continue
+        header_text = " ".join(c.lower() for c in table[0])
+        if ("gmp" in header_text or "grey market" in header_text or "subject to sauda" in header_text or
+            ("date" in header_text and "premium" in header_text)):
+            gmp_history: list[dict] = []
+            latest_gmp: dict | None = None
+            for row in table[1:]:  # skip header
+                if len(row) >= 2:
+                    date_str = row[0].strip()
+                    gmp_val = _parse_number(row[1])
+                    sauda = _parse_number(row[2]) if len(row) >= 3 else None
+                    entry = {"date": date_str, "gmp": gmp_val, "subject_to_sauda": sauda}
+                    gmp_history.append(entry)
+                    if latest_gmp is None and gmp_val is not None:
+                        latest_gmp = entry
+            if gmp_history:
+                data["gmp_history"] = gmp_history
+                # Set current GMP from the latest entry.
+                if latest_gmp and latest_gmp["gmp"] is not None:
+                    premium = latest_gmp["gmp"]
+                    pct = None
+                    if data["price_high"] and data["price_high"] > 0:
+                        pct = round((premium / data["price_high"]) * 100, 2)
+                    data["gmp"] = {
+                        "premium": premium,
+                        "premium_pct": pct,
+                        "last_updated": datetime.now(timezone.utc).isoformat(),
+                    }
+            break
 
     # Tables 7+: Subscription, Peer comparison, Timeline.
     # These are detected by header content rather than fixed index because
     # the subscription table is only present for currently-open IPOs.
-    for ti in range(7, len(tables)):
+    for ti in range(3, len(tables)):
         table = tables[ti]
         if not table or not table[0]:
             continue
@@ -386,7 +445,7 @@ def _parse_detail_page(html: str, company_name: str, link: str | None) -> dict:
                 sub_val = _parse_number(row[-1]) if row[-1] else None
                 if cat == "QIB":
                     sub["qib"] = sub_val
-                elif "HNI" in cat and "B " not in cat and "S " not in cat:
+                elif ("HNI" in cat or "NII" in cat) and "-B" not in cat and "-S" not in cat and "BHNIs" not in cat and "SHNIs" not in cat:
                     sub["nii"] = sub_val
                 elif cat in ("RETAIL", "RII"):
                     sub["rii"] = sub_val
@@ -416,9 +475,16 @@ def _parse_detail_page(html: str, company_name: str, link: str | None) -> dict:
                 data["peer_comparison"] = peers
             continue
 
-        # Timeline: first cell contains "opening date" or "closing date".
-        first_cell = table[0][0].lower() if table[0] and table[0][0] else ""
-        is_timeline = "opening date" in first_cell or "ipo opening" in first_cell
+        # Timeline: check first few rows for timeline-specific keywords.
+        all_first_cells = " ".join(
+            (row[0].lower() if row and row[0] else "")
+            for row in table[:4]
+        )
+        is_timeline = any(k in all_first_cells for k in (
+            "opening date", "ipo opening", "closing date", "ipo closing",
+            "allotment date", "basis of allotment", "listing date",
+            "refund", "demat credit",
+        ))
         if is_timeline and not data["ipo_timeline"]:
             timeline: dict = {}
             for row in table:
@@ -481,8 +547,54 @@ def _parse_financial_table(table: list[list[str]]) -> dict | None:
 
 
 def _parse_issue_size(s: str) -> float | None:
-    """Parse '₹459.72 Cr.' or 'INR 250 crore' → 459.72."""
+    """Parse '₹459.72 Cr.' or 'INR 250 crore' → 459.72.
+
+    Handles formats like:
+      'INR 210 crore'                    → 210.0
+      '₹459.72 Cr.'                       → 459.72
+      '52,30,000 shares (INR 118.72 - 125 crore)' → 125.0 (upper end of range)
+      '₹168 - 177 per share'             → None (this is a price band, not issue size)
+    """
     if not s:
+        return None
+
+    # 1) Look for crore/cr amount first (most reliable).
+    #    May be a range like "INR 118.72 - 125 crore" — take the upper end.
+    m = re.search(r"(?:INR|₹|Rs\.?)\s*[\d,]+\.?\d*\s*(?:-|to|–)\s*([\d,]+\.?\d*)\s*cr", s, re.IGNORECASE)
+    if m:
+        try:
+            return float(m.group(1).replace(",", ""))
+        except ValueError:
+            pass
+    # Single crore amount: "INR 210 crore" or "₹459.72 Cr."
+    m = re.search(r"(?:INR|₹|Rs\.?)\s*([\d,]+\.?\d*)\s*cr", s, re.IGNORECASE)
+    if m:
+        try:
+            return float(m.group(1).replace(",", ""))
+        except ValueError:
+            pass
+
+    # 2) Look for bare number + "cr"/"crore" without currency prefix.
+    m = re.search(r"([\d,]+\.?\d*)\s*(?:-|to|–)\s*([\d,]+\.?\d*)\s*cr", s, re.IGNORECASE)
+    if m:
+        try:
+            return float(m.group(2).replace(",", ""))
+        except ValueError:
+            pass
+    m = re.search(r"([\d,]+\.?\d*)\s*cr", s, re.IGNORECASE)
+    if m:
+        try:
+            return float(m.group(1).replace(",", ""))
+        except ValueError:
+            pass
+
+    # 3) Fallback: if the string mentions "shares", don't parse the share count
+    #    as a crore amount. Return None to avoid wrong values.
+    if "share" in s.lower():
+        return None
+
+    # 4) Last resort: bare number (but only if no "per share" indicator).
+    if "per share" in s.lower() or "price" in s.lower():
         return None
     m = re.search(r"[\d,]+\.?\d*", s.replace("₹", ""))
     if m:
@@ -497,7 +609,8 @@ def _parse_ofs_amount(s: str | None) -> float | None:
     """Extract the OFS amount in ₹ Cr from strings like
     '1,18,48,340 shares (INR 199.05 - 209.72 crore)'.
 
-    Looks for a crore amount first; falls back to the plain issue-size parser.
+    Looks for a crore amount first (taking the lower end of a range).
+    Falls back to _parse_issue_size only if no crore pattern is found.
     """
     if not s:
         return None
@@ -515,7 +628,20 @@ def _parse_ofs_amount(s: str | None) -> float | None:
             return float(m.group(1).replace(",", ""))
         except ValueError:
             pass
-    return _parse_issue_size(s)
+    # Bare number + cr (range — take lower end for OFS).
+    m = re.search(r"([\d,]+\.?\d*)\s*(?:-|to|–)\s*[\d,]+\.?\d*\s*cr", s, re.IGNORECASE)
+    if m:
+        try:
+            return float(m.group(1).replace(",", ""))
+        except ValueError:
+            pass
+    m = re.search(r"([\d,]+\.?\d*)\s*cr", s, re.IGNORECASE)
+    if m:
+        try:
+            return float(m.group(1).replace(",", ""))
+        except ValueError:
+            pass
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -608,7 +734,7 @@ async def _fetch_detail(
 
     details = _parse_detail_page(html, company, link)
     base.update(details)
-    # Override issue_size if we got it from the summary table.
+    # If issue_size was passed from the summary table and detail didn't have it.
     if issue_size and not base["issue_size_crs"]:
         base["issue_size_crs"] = issue_size
 
@@ -649,12 +775,12 @@ async def _scrape_ipo_list(client: httpx.AsyncClient, url: str, status: str) -> 
                 continue
             link = row.get("link")
             ipo_date = row.get("col_1", "")
-            issue_size = _parse_issue_size(row.get("col_2", ""))
+            # col_2 is the price band, not issue size — don't parse it.
             ipos.append({
                 "company": company,
                 "link": link,
                 "ipo_date": ipo_date,
-                "issue_size": issue_size,
+                "issue_size": None,  # Filled from detail page
             })
         result[board] = ipos
 

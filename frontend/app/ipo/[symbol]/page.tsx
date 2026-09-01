@@ -409,6 +409,77 @@ function FinTable({ title, data }: { title: string; data: IpoFinancials | null }
   );
 }
 
+function FinancialMetricsCard({ rec, ipo }: { rec: IpoRecommendation | null; ipo: IpoData }) {
+  const m = rec?.financial_metrics;
+  // If no financial_metrics from recommendation, try to extract from return_ratios
+  const ratios = ipo.return_ratios;
+  const fin = ipo.financials;
+
+  // Helper to get latest value from a financial table
+  function latestVal(table: IpoFinancials | null, metric: string): number | null {
+    if (!table || !table[metric]) return null;
+    const vals = Object.values(table[metric]).filter((v): v is number => typeof v === "number");
+    return vals.length > 0 ? vals[vals.length - 1] : null;
+  }
+
+  const roe = m?.roe ?? latestVal(ratios, "RONW (%)");
+  const roce = m?.roce ?? latestVal(ratios, "ROCE (%)");
+  const de = m?.debt_equity ?? latestVal(ratios, "Debt/Equity");
+  const ebitda = m?.ebitda_margin ?? latestVal(ratios, "EBITDA (%)");
+  const patMargin = m?.pat_margin ?? latestVal(fin, "Margin (%)");
+  const nav = m?.nav ?? latestVal(ratios, "NAV");
+  const pb = m?.price_to_book ?? (nav && nav > 0 && ipo.price_high ? ipo.price_high / nav : null);
+
+  const rows = [
+    { label: "ROE (RONW)", value: roe, suffix: "%", good: roe != null && roe >= 20, bad: roe != null && roe < 10, desc: "Return on Net Worth" },
+    { label: "ROCE", value: roce, suffix: "%", good: roce != null && roce >= 20, bad: roce != null && roce < 10, desc: "Return on Capital Employed" },
+    { label: "Debt/Equity", value: de, suffix: "x", good: de != null && de < 0.5, bad: de != null && de > 1.0, desc: "Leverage ratio" },
+    { label: "EBITDA Margin", value: ebitda, suffix: "%", good: ebitda != null && ebitda >= 10, bad: ebitda != null && ebitda < 5, desc: "Operating profitability" },
+    { label: "PAT Margin", value: patMargin, suffix: "%", good: patMargin != null && patMargin >= 10, bad: patMargin != null && patMargin < 5, desc: "Net profit margin" },
+    { label: "NAV", value: nav, prefix: "₹", good: nav != null && nav > 0, bad: nav != null && nav <= 0, desc: "Net Asset Value per share" },
+    { label: "Price to Book", value: pb, suffix: "x", good: pb != null && pb <= 3, bad: pb != null && pb > 5, desc: "Price / NAV" },
+  ];
+
+  const hasAny = rows.some((r) => r.value != null);
+  if (!hasAny) return null;
+
+  return (
+    <div className="glass-card p-5">
+      <h2 className="section-title mb-3">Key Financial Metrics</h2>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-slate-500 border-b border-slate-800">
+              <th className="px-3 py-2 text-left font-medium">Metric</th>
+              <th className="px-3 py-2 text-right font-medium">Latest</th>
+              <th className="px-3 py-2 text-left font-medium hidden sm:table-cell">Description</th>
+              <th className="px-3 py-2 text-center font-medium">Signal</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.filter((r) => r.value != null).map((r, i) => (
+              <tr key={i} className="border-b border-slate-800/40">
+                <td className="px-3 py-2 text-slate-300 font-medium">{r.label}</td>
+                <td className={`px-3 py-2 text-right tabular-nums font-semibold ${r.bad ? "text-rose-400" : r.good ? "text-emerald-400" : "text-slate-300"}`}>
+                  {r.prefix}{r.value != null ? r.value.toFixed(2) : "—"}{r.suffix}
+                </td>
+                <td className="px-3 py-2 text-slate-500 hidden sm:table-cell">{r.desc}</td>
+                <td className="px-3 py-2 text-center">
+                  {r.bad ? <span className="text-rose-400">✗</span> : r.good ? <span className="text-emerald-400">✓</span> : <span className="text-slate-500">—</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11px] text-slate-600 mt-2">
+        ROE and ROCE measure capital efficiency. Debt/Equity shows leverage. EBITDA & PAT margins show profitability.
+        NAV is book value per share. P/B compares issue price to book value.
+      </p>
+    </div>
+  );
+}
+
 function PeerTable({ peers }: { peers: IpoPeer[] | null }) {
   if (!peers || peers.length === 0) return null;
   const cols = peers.length > 0 ? Object.keys(peers[0]).filter(k => k !== "company") : [];
@@ -636,6 +707,7 @@ export default function IpoDetailPage({ params }: { params: { symbol: string } }
       <TimelineCard timeline={ipo.ipo_timeline} />
 
       {/* Financials */}
+      <FinancialMetricsCard rec={rec} ipo={ipo} />
       <div className="grid gap-5 lg:grid-cols-2">
         <FinTable title="Financials (₹ Cr)" data={ipo.financials} />
         <FinTable title="Per-Share Metrics" data={ipo.per_share_metrics} />

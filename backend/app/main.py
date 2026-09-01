@@ -44,6 +44,7 @@ from app.api import risk_analytics as risk_analytics_api
 from app.api import rebalancing as rebalancing_api
 from app.api import user_auth as user_auth_api
 from app.api import bot as bot_api
+from app.api import long_term as long_term_api
 
 
 async def _prewarm_caches():
@@ -185,6 +186,7 @@ app.include_router(risk_analytics_api.router, prefix="/api")
 app.include_router(rebalancing_api.router, prefix="/api")
 app.include_router(user_auth_api.router, prefix="/api")
 app.include_router(bot_api.router, prefix="/api")
+app.include_router(long_term_api.router, prefix="/api")
 
 
 @app.get("/health")

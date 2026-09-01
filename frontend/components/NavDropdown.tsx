@@ -38,6 +38,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/mf", label: "Funds", icon: "M4 6h16M4 12h16M4 18h10", section: "India \u00b7 NSE" },
       { href: "/gap-scanner", label: "Gap Scanner", icon: "M3 17l6-6 4 4 8-8M14 7h7v7", section: "India \u00b7 NSE" },
       { href: "/holdings", label: "Holdings", icon: "M20 7l-8-4-8 4v10l8 4 8-4V7zM4 7l8 4 8-4M12 11v10", section: "India \u00b7 NSE" },
+      { href: "/long-term", label: "Long-Term", icon: "M12 2v20M5 7l7-5 7 5M5 17l7 5 7-5M12 7l5 5-5 5-5-5 5-5z", section: "India \u00b7 NSE" },
       { href: "/", label: "Intraday", icon: "M3 13h2l3-9 4 18 3-9h6", section: "India \u00b7 NSE" },
       { href: "/ipo", label: "IPO", icon: "M3 3h18v18H3zM3 9h18M9 21V9M3 15h18M15 21V9", section: "India \u00b7 NSE" },
       { href: "/momentum-rotation", label: "Momentum", icon: "M3 17l6-6 4 4 8-8M14 7h7v7", section: "India \u00b7 NSE" },

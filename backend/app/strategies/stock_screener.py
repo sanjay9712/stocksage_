@@ -23,6 +23,7 @@ async def screen_stock(
     rf_annual: float = 0.06,
     min_composite: float = 0.55,
     benchmark_close: pd.Series | None = None,
+    weights: dict[str, float] | None = None,
 ) -> dict | None:
     """Screen a single stock. Returns a dict if it passes, None if filtered out."""
     try:
@@ -73,7 +74,7 @@ async def screen_stock(
     except Exception:
         fundamentals = {}
 
-    scores = composite_score(daily, fundamentals)
+    scores = composite_score(daily, fundamentals, weights=weights)
 
     if scores["composite"] < min_composite:
         return None

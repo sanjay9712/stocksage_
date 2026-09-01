@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import { fetchIpoAll, type IpoData, type IpoResponse, type IpoTimeline, type IpoRecommendation, type IpoCriteriaItem } from "@/lib/api";
+import { fetchIpoAll, type IpoData, type IpoResponse, type IpoTimeline, type IpoRecommendation, type IpoCriteriaItem, type IpoFinancials } from "@/lib/api";
 
 type Board = "mainboard" | "sme";
 type StatusFilter = "all" | "current" | "upcoming" | "recent";
@@ -280,6 +280,132 @@ function CriteriaChecklist({ rec }: { rec: IpoRecommendation }) {
   );
 }
 
+function _latestVal(table: IpoFinancials | null, metric: string): number | null {
+  if (!table || !table[metric]) return null;
+  const vals = Object.values(table[metric]).filter((v): v is number => typeof v === "number");
+  return vals.length > 0 ? vals[vals.length - 1] : null;
+}
+
+function FinancialMetricsSummary({ rec, ipo }: { rec: IpoRecommendation | null; ipo: IpoData }) {
+  const m = rec?.financial_metrics;
+  const ratios = ipo.return_ratios;
+  const fin = ipo.financials;
+  const roe = m?.roe ?? _latestVal(ratios, "RONW (%)");
+  const roce = m?.roce ?? _latestVal(ratios, "ROCE (%)");
+  const de = m?.debt_equity ?? _latestVal(ratios, "Debt/Equity");
+  const ebitda = m?.ebitda_margin ?? _latestVal(ratios, "EBITDA (%)");
+  const patMargin = m?.pat_margin ?? _latestVal(fin, "Margin (%)");
+  const nav = m?.nav ?? _latestVal(ratios, "NAV");
+  const pb = m?.price_to_book ?? (nav && nav > 0 && ipo.price_high ? ipo.price_high / nav : null);
+
+  const items = [
+    { label: "ROE", value: roe, suffix: "%", prefix: "", good: roe != null && roe >= 20, bad: roe != null && roe < 10 },
+    { label: "ROCE", value: roce, suffix: "%", prefix: "", good: roce != null && roce >= 20, bad: roce != null && roce < 10 },
+    { label: "D/E", value: de, suffix: "x", prefix: "", good: de != null && de < 0.5, bad: de != null && de > 1.0 },
+    { label: "EBITDA", value: ebitda, suffix: "%", prefix: "", good: ebitda != null && ebitda >= 10, bad: ebitda != null && ebitda < 5 },
+    { label: "PAT Margin", value: patMargin, suffix: "%", prefix: "", good: patMargin != null && patMargin >= 10, bad: patMargin != null && patMargin < 5 },
+    { label: "NAV", value: nav, suffix: "", prefix: "₹", good: nav != null && nav > 0, bad: nav != null && nav <= 0 },
+    { label: "P/B", value: pb, suffix: "x", prefix: "", good: pb != null && pb <= 3, bad: pb != null && pb > 5 },
+  ];
+
+  const hasAny = items.some((r) => r.value != null);
+  if (!hasAny) return null;
+
+  const fmt = (v: number | null, suffix: string, prefix: string = "") =>
+    v != null ? `${prefix}${v.toFixed(2)}${suffix}` : "—";
+
+  return (
+    <div>
+      <div className="text-[10px] text-slate-500 uppercase mb-2">Key Financial Metrics</div>
+      <div className="grid grid-cols-4 gap-1.5">
+        {items.map((item, i) => (
+          <div key={i} className="bg-slate-800/40 rounded px-2 py-1.5 text-center">
+            <div className="text-[9px] text-slate-500 uppercase">{item.label}</div>
+            <div className={`text-xs font-semibold tabular-nums ${item.bad ? "text-rose-400" : item.good ? "text-emerald-400" : "text-slate-300"}`}>
+              {fmt(item.value, item.suffix, item.prefix)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FinancialMetricsComparison({ ipos, board }: { ipos: IpoData[]; board: string }) {
+  // Extract metrics for each IPO
+  const rows = ipos.map((ipo) => {
+    const m = ipo.recommendation?.financial_metrics;
+    const ratios = ipo.return_ratios;
+    const fin = ipo.financials;
+    const roe = m?.roe ?? _latestVal(ratios, "RONW (%)");
+    const roce = m?.roce ?? _latestVal(ratios, "ROCE (%)");
+    const de = m?.debt_equity ?? _latestVal(ratios, "Debt/Equity");
+    const ebitda = m?.ebitda_margin ?? _latestVal(ratios, "EBITDA (%)");
+    const patMargin = m?.pat_margin ?? _latestVal(fin, "Margin (%)");
+    const nav = m?.nav ?? _latestVal(ratios, "NAV");
+    const pb = m?.price_to_book ?? (nav && nav > 0 && ipo.price_high ? ipo.price_high / nav : null);
+    return { ipo, roe, roce, de, ebitda, patMargin, nav, pb };
+  });
+
+  const hasAny = rows.some((r) => r.roe != null || r.roce != null || r.de != null || r.ebitda != null || r.patMargin != null || r.nav != null || r.pb != null);
+  if (!hasAny) return null;
+
+  const fmt = (v: number | null, suffix: string = "", prefix: string = "") =>
+    v != null ? `${prefix}${v.toFixed(2)}${suffix}` : "—";
+
+  const cellColor = (v: number | null, goodIf: (v: number) => boolean, badIf: (v: number) => boolean) => {
+    if (v == null) return "text-slate-600";
+    if (goodIf(v)) return "text-emerald-400";
+    if (badIf(v)) return "text-rose-400";
+    return "text-slate-300";
+  };
+
+  return (
+    <div className="glass-card overflow-x-auto">
+      <div className="p-3 border-b border-slate-800">
+        <h2 className="text-sm font-semibold text-slate-200">{board === "sme" ? "SME" : "Main Board"} IPO Financial Metrics Comparison</h2>
+        <p className="text-[10px] text-slate-500 mt-0.5">Latest reported values — click a column header to sort the main table above</p>
+      </div>
+      <table className="w-full text-[11px]">
+        <thead>
+          <tr className="text-slate-500 border-b border-slate-800">
+            <th className="px-2 py-2 text-left font-medium sticky left-0 bg-slate-900/80">Company</th>
+            <th className="px-2 py-2 text-right font-medium whitespace-nowrap">ROE (%)</th>
+            <th className="px-2 py-2 text-right font-medium whitespace-nowrap">ROCE (%)</th>
+            <th className="px-2 py-2 text-right font-medium whitespace-nowrap">D/E</th>
+            <th className="px-2 py-2 text-right font-medium whitespace-nowrap">EBITDA (%)</th>
+            <th className="px-2 py-2 text-right font-medium whitespace-nowrap">PAT Margin (%)</th>
+            <th className="px-2 py-2 text-right font-medium whitespace-nowrap">NAV (₹)</th>
+            <th className="px-2 py-2 text-right font-medium whitespace-nowrap">P/B (x)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} className="border-b border-slate-800/40 hover:bg-slate-800/30">
+              <td className="px-2 py-2 text-slate-300 font-medium sticky left-0 bg-slate-900/80">
+                <Link href={`/ipo/${encodeURIComponent(r.ipo.symbol || r.ipo.company_name)}`} className="hover:text-emerald-400">
+                  {r.ipo.company_name}
+                </Link>
+              </td>
+              <td className={`px-2 py-2 text-right tabular-nums ${cellColor(r.roe, v => v >= 20, v => v < 10)}`}>{fmt(r.roe)}</td>
+              <td className={`px-2 py-2 text-right tabular-nums ${cellColor(r.roce, v => v >= 20, v => v < 10)}`}>{fmt(r.roce)}</td>
+              <td className={`px-2 py-2 text-right tabular-nums ${cellColor(r.de, v => v < 0.5, v => v > 1.0)}`}>{fmt(r.de)}</td>
+              <td className={`px-2 py-2 text-right tabular-nums ${cellColor(r.ebitda, v => v >= 10, v => v < 5)}`}>{fmt(r.ebitda)}</td>
+              <td className={`px-2 py-2 text-right tabular-nums ${cellColor(r.patMargin, v => v >= 10, v => v < 5)}`}>{fmt(r.patMargin)}</td>
+              <td className={`px-2 py-2 text-right tabular-nums ${cellColor(r.nav, v => v > 0, v => v <= 0)}`}>{fmt(r.nav, "", "₹")}</td>
+              <td className={`px-2 py-2 text-right tabular-nums ${cellColor(r.pb, v => v <= 3, v => v > 5)}`}>{fmt(r.pb, "x")}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="p-2 border-t border-slate-800 text-[10px] text-slate-600">
+        <span className="text-emerald-400">✓</span> = meets threshold &nbsp; <span className="text-rose-400">✗</span> = below threshold &nbsp;·&nbsp;
+        ROE ≥20% strong, ROCE ≥20% strong, D/E ≤0.5 healthy, EBITDA ≥10% healthy, PAT ≥10% healthy, P/B ≤3 reasonable
+      </div>
+    </div>
+  );
+}
+
 function TimelineView({ timeline }: { timeline: IpoTimeline | null }) {
   if (!timeline) return null;
   const entries = Object.entries(timeline).filter(([, v]) => v);
@@ -474,6 +600,7 @@ function IpoRow({ ipo }: { ipo: IpoData }) {
               <TimelineView timeline={timeline} />
 
               {/* Financials */}
+              <FinancialMetricsSummary rec={rec} ipo={ipo} />
               <FinTable title="Financials (₹ Cr)" data={fin} />
               <FinTable title="Per-Share Metrics" data={metrics} />
               <FinTable title="Return Ratios" data={ratios} />
@@ -671,6 +798,9 @@ export default function IpoPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Financial metrics comparison table */}
+          <FinancialMetricsComparison ipos={ipos} board={board} />
 
           <div className="glass-card p-4">
             <div className="text-xs text-slate-500 mb-2">Score Legend</div>

@@ -243,6 +243,41 @@ class DailyRecommendation(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class StrategyVerification(Base):
+    """Daily snapshot of each strategy's rolling verification status.
+
+    Tracks whether a strategy is 'proven' (enough trades over enough days
+    with positive win rate + P&L), 'testing' (not enough data yet), or
+    'unproven' (enough data but poor performance).
+    """
+    __tablename__ = "strategy_verification"
+
+    id = Column(Integer, primary_key=True)
+    date = Column(Date, index=True, nullable=False)
+    strategy = Column(String(16), index=True, nullable=False)
+    # Rolling stats (last N days)
+    days_tracked = Column(Integer, default=0)
+    total_trades = Column(Integer, default=0)
+    resolved_trades = Column(Integer, default=0)
+    wins = Column(Integer, default=0)
+    losses = Column(Integer, default=0)
+    win_rate = Column(Float, default=0.0)
+    avg_pnl_pct = Column(Float, default=0.0)
+    total_pnl_pct = Column(Float, default=0.0)
+    profitable_days = Column(Integer, default=0)
+    consistency_pct = Column(Float, default=0.0)
+    # Backtest stats (supplementary — used when live trades insufficient)
+    backtest_win_rate = Column(Float, nullable=True)
+    backtest_avg_return = Column(Float, nullable=True)
+    backtest_days = Column(Integer, nullable=True)
+    # Verdict
+    verdict = Column(String(20), default="testing")  # proven / testing / unproven
+    proven_since = Column(Date, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("date", "strategy", name="uq_verification_date_strategy"),)
+
+
 engine = create_engine(settings.db_url, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 

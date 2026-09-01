@@ -163,6 +163,31 @@ def _run_bot_ranking_sync():
         log.exception("bot ranking failed: %s", e)
 
 
+def _run_verification_sync():
+    """End-of-day: compute strategy verification (proven/testing/unproven)."""
+    try:
+        from app.bot.verifier import compute_strategy_track_records, save_verification_snapshot
+        from app.db import SessionLocal
+
+        async def _run():
+            db = SessionLocal()
+            try:
+                records = await compute_strategy_track_records(db)
+                await save_verification_snapshot(db, records)
+                log.info(
+                    "verification: %d proven, %d testing, %d unproven",
+                    sum(1 for r in records if r.verdict == "proven"),
+                    sum(1 for r in records if r.verdict == "testing"),
+                    sum(1 for r in records if r.verdict == "unproven"),
+                )
+            finally:
+                db.close()
+
+        asyncio.run(_run())
+    except Exception as e:  # pragma: no cover
+        log.exception("verification failed: %s", e)
+
+
 def start_scheduler() -> AsyncIOScheduler:
     global _scheduler
     if _scheduler is not None:
@@ -250,6 +275,14 @@ def start_scheduler() -> AsyncIOScheduler:
         _run_bot_ranking_sync,
         CronTrigger(hour="15", minute="25", timezone=settings.tz),
         id="bot-rank-daily",
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
+    # End-of-day: compute strategy verification (proven/testing/unproven) at 15:30.
+    sched.add_job(
+        _run_verification_sync,
+        CronTrigger(hour="15", minute="30", timezone=settings.tz),
+        id="verification-daily",
         misfire_grace_time=3600,
         coalesce=True,
     )

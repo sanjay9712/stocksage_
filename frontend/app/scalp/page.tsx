@@ -5,6 +5,7 @@ import useSWR from "swr";
 import Link from "next/link";
 import { fetchScalping, fetchScalpSignal, type ScalpSignal } from "@/lib/api";
 import StockSearch from "@/components/StockSearch";
+import { StrategyVerificationBadge } from "@/components/StrategyVerificationBadge";
 
 export default function ScalpPage() {
   const { data, isLoading, mutate } = useSWR("scalping", fetchScalping, { refreshInterval: 300000, keepPreviousData: true });
@@ -16,7 +17,10 @@ export default function ScalpPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold text-slate-100">Scalping Signals</h1>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <div className="mt-1.5">
+            <StrategyVerificationBadge strategy="scalp" />
+          </div>
+          <p className="text-xs text-slate-500 mt-1.5">
             Candlestick pattern triggers with tight ATR stops. Fast in-and-out trades.
           </p>
         </div>

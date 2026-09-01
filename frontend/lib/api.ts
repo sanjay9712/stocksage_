@@ -1734,6 +1734,62 @@ export interface IpoGmp {
   last_updated: string | null;
 }
 
+export interface IpoGmpHistoryEntry {
+  date: string;
+  gmp: number | null;
+  subject_to_sauda: number | null;
+}
+
+export interface IpoFinancials {
+  [metric: string]: Record<string, number | string>;
+}
+
+export interface IpoPeer {
+  company: string;
+  [metric: string]: number | string;
+}
+
+export interface IpoAnchorInvestors {
+  bid_date?: string | null;
+  shares_offered?: string | null;
+  amount_crs?: number | null;
+  lock_in_50pct_date?: string | null;
+  lock_in_90pct_date?: string | null;
+}
+
+export interface IpoIssueStructure {
+  fresh_issue_crs: number | null;
+  ofs_amount_crs: number | null;
+  fresh_pct: number | null;
+  ofs_pct: number | null;
+  promoter_exit_heavy: boolean;
+}
+
+export interface IpoValuation {
+  ipo_pe: number | null;
+  peer_pe_avg: number | null;
+  discount_to_peers_pct: number | null;
+}
+
+export interface IpoRecommendation {
+  verdict: "Apply" | "Consider" | "Avoid" | "Insufficient Data";
+  pros: string[];
+  cons: string[];
+  critical_flags: string[];
+  summary: string;
+  issue_structure: IpoIssueStructure;
+  valuation: IpoValuation;
+}
+
+export interface IpoTimeline {
+  open_date?: string | null;
+  close_date?: string | null;
+  allotment_date?: string | null;
+  refund_date?: string | null;
+  demat_credit_date?: string | null;
+  listing_date?: string | null;
+}
+
 export interface IpoData {
   company_name: string;
   symbol: string;
@@ -1744,7 +1800,11 @@ export interface IpoData {
   price_high: number | null;
   face_value: number | null;
   issue_size_crs: number | null;
+  fresh_issue_crs: number | null;
+  offer_for_sale: string | null;
+  ofs_amount_crs: number | null;
   lot_size: number | null;
+  lot_value: number | null;
   open_date: string | null;
   close_date: string | null;
   allotment_date: string | null;
@@ -1753,10 +1813,22 @@ export interface IpoData {
   registrar: string | null;
   market_maker: string | null;
   lead_manager: string | null;
-  subscription: IpoSubscription | null;
+  issue_type: string | null;
+  quota_percent: Record<string, number> | null;
+  financials: IpoFinancials | null;
+  per_share_metrics: IpoFinancials | null;
+  return_ratios: IpoFinancials | null;
+  anchor_investors: IpoAnchorInvestors | null;
   gmp: IpoGmp | null;
+  gmp_history: IpoGmpHistoryEntry[] | null;
+  subscription: IpoSubscription | null;
+  peer_comparison: IpoPeer[] | null;
+  ipo_timeline: IpoTimeline | null;
+  allotment_price: number | null;
+  listing_return_pct: number | null;
   selection_score: number | null;
   score_factors: Record<string, number> | null;
+  recommendation: IpoRecommendation | null;
 }
 
 export interface IpoBoardData {
@@ -1986,4 +2058,46 @@ export const triggerBotScan = (market = "nse") =>
   );
 export const fetchStrategyComparison = (days = 30) =>
   apiFetch<{ comparison: Record<string, any>; count: number }>(`/api/bot/strategy-comparison?days=${days}`);
+
+// ---------------------------------------------------------------------------
+// Strategy verification (proven/testing/unproven)
+// ---------------------------------------------------------------------------
+
+export interface StrategyTrackRecord {
+  strategy: string;
+  days_tracked: number;
+  total_trades: number;
+  resolved_trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  avg_pnl_pct: number;
+  total_pnl_pct: number;
+  best_trade_pct: number;
+  worst_trade_pct: number;
+  profitable_days: number;
+  consistency_pct: number;
+  backtest_win_rate: number | null;
+  backtest_avg_return: number | null;
+  backtest_days: number | null;
+  verdict: "proven" | "testing" | "unproven";
+  proven_since: string | null;
+  min_trades_met?: boolean;
+  min_days_met?: boolean;
+  min_win_rate_met?: boolean;
+  min_pnl_met?: boolean;
+}
+
+export interface ProvenStrategiesResponse {
+  strategies: StrategyTrackRecord[];
+  proven_count: number;
+  testing_count: number;
+  unproven_count: number;
+}
+
+export const fetchProvenStrategies = (days = 30) =>
+  apiFetch<ProvenStrategiesResponse>(`/api/bot/proven-strategies?rolling_days=${days}`);
+
+export const fetchPicksVerification = () =>
+  apiFetch<ProvenStrategiesResponse>("/api/daily-picks/verification");
 

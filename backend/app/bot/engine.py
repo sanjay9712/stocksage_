@@ -469,7 +469,17 @@ async def compute_strategy_rankings(db: Session, target_date: date) -> list[Stra
 # ---------------------------------------------------------------------------
 
 async def generate_daily_recommendation(db: Session, target_date: date) -> DailyRecommendation | None:
-    """Pick the best stock/strategy combination for the day."""
+    """Pick the best stock/strategy combination for the day.
+
+    Filters to proven strategies first (verified over time via virtual bets).
+    If no strategies are proven yet (first week), uses all strategies but
+    adds a caveat about the verification period.
+    """
+    # NEW: Get proven strategies first.
+    from app.bot.verifier import compute_strategy_track_records, get_proven_strategies
+    records = await compute_strategy_track_records(db)
+    proven = get_proven_strategies(records)
+
     # Ensure rankings exist.
     rankings = db.execute(
         select(StrategyRanking).where(StrategyRanking.date == target_date)
@@ -479,6 +489,26 @@ async def generate_daily_recommendation(db: Session, target_date: date) -> Daily
 
     if not rankings:
         return None
+
+    # Filter to proven strategies only.
+    verification_caveats: list[str] = []
+    if proven:
+        filtered = [r for r in rankings if r.strategy in proven]
+        if filtered:
+            rankings = filtered
+            verification_caveats.append(
+                f"Recommendation from proven strategy: {rankings[0].strategy} "
+                f"(verified over {next((r.days_tracked for r in records if r.strategy == rankings[0].strategy), 0)} days)."
+            )
+        else:
+            verification_caveats.append(
+                "No proven strategies had signals today — using best available strategy."
+            )
+    else:
+        verification_caveats.append(
+            "No strategies have been proven yet (need 7+ days of virtual trade data). "
+            "Recommendation is based on today's performance only — treat with caution."
+        )
 
     top_strategy = rankings[0].strategy
 
@@ -534,6 +564,7 @@ async def generate_daily_recommendation(db: Session, target_date: date) -> Daily
         caveats = best.explanation.get("caveats", [])
     else:
         caveats = []
+    caveats = list(caveats) + verification_caveats
 
     # Upsert by date.
     existing = db.execute(

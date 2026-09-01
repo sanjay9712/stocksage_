@@ -38,7 +38,8 @@ export default function PicksTable({ picks }: { picks: Pick[] }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 fade-in">
       {picks.map((p) => {
-        const rr1 = ((p.target1 - p.entry) / (p.entry - p.stop_loss)).toFixed(1);
+        const risk = p.entry - p.stop_loss;
+        const rr1 = risk !== 0 ? ((p.target1 - p.entry) / risk).toFixed(1) : "—";
         const confPct = Math.round(p.confidence * 100);
         return (
           <Link

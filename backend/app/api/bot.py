@@ -329,3 +329,53 @@ async def strategy_comparison(
         del d["wfe_scores"]
 
     return {"comparison": by_strat, "count": len(by_strat)}
+
+
+@router.get("/bot/proven-strategies")
+async def proven_strategies(
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+    rolling_days: int = Query(30, le=90),
+):
+    """Returns track records for all strategies with proven/testing/unproven verdict.
+
+    Aggregates BotDecision history over the last `rolling_days` days per
+    strategy, computes win rate, avg P&L, consistency, and determines whether
+    each strategy is proven (enough trades + good performance), testing (not
+    enough data), or unproven (enough data but poor performance).
+    """
+    from app.bot.verifier import compute_strategy_track_records
+
+    records = await compute_strategy_track_records(db, rolling_days=rolling_days)
+    return {
+        "strategies": [
+            {
+                "strategy": r.strategy,
+                "days_tracked": r.days_tracked,
+                "total_trades": r.total_trades,
+                "resolved_trades": r.resolved_trades,
+                "wins": r.wins,
+                "losses": r.losses,
+                "win_rate": r.win_rate,
+                "avg_pnl_pct": r.avg_pnl_pct,
+                "total_pnl_pct": r.total_pnl_pct,
+                "best_trade_pct": r.best_trade_pct,
+                "worst_trade_pct": r.worst_trade_pct,
+                "profitable_days": r.profitable_days,
+                "consistency_pct": r.consistency_pct,
+                "backtest_win_rate": r.backtest_win_rate,
+                "backtest_avg_return": r.backtest_avg_return,
+                "backtest_days": r.backtest_days,
+                "verdict": r.verdict,
+                "proven_since": r.proven_since.isoformat() if r.proven_since else None,
+                "min_trades_met": r.min_trades_met,
+                "min_days_met": r.min_days_met,
+                "min_win_rate_met": r.min_win_rate_met,
+                "min_pnl_met": r.min_pnl_met,
+            }
+            for r in records
+        ],
+        "proven_count": sum(1 for r in records if r.verdict == "proven"),
+        "testing_count": sum(1 for r in records if r.verdict == "testing"),
+        "unproven_count": sum(1 for r in records if r.verdict == "unproven"),
+    }

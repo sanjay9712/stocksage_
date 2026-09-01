@@ -107,7 +107,10 @@ export default function NavDropdown() {
   // Close on Escape key.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") closeNow();
+      if (e.key === "Escape") {
+        closeNow();
+        setLockedItem(null);
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -151,6 +154,10 @@ export default function NavDropdown() {
         return (
           <div key={group.label} className="relative" onMouseEnter={() => handleEnter(idx)}>
             <button
+              type="button"
+              aria-expanded={openIdx === idx}
+              aria-haspopup="true"
+              aria-label={group.label}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg whitespace-nowrap transition-colors ${
                 openIdx === idx || isGroupActive(group)
                   ? "text-emerald-400 bg-slate-800/50"
@@ -249,6 +256,9 @@ export default function NavDropdown() {
           onMouseDown={(e) => { if (e.target === e.currentTarget) setLockedItem(null); }}
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="locked-modal-title"
             className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl shadow-black/50 p-6 max-w-sm w-full mx-4"
             onMouseDown={(e) => e.stopPropagation()}
           >
@@ -260,7 +270,7 @@ export default function NavDropdown() {
                 </svg>
               </div>
               <div>
-                <h3 className="text-base font-semibold text-slate-100">Sign in required</h3>
+                <h3 id="locked-modal-title" className="text-base font-semibold text-slate-100">Sign in required</h3>
                 <p className="text-xs text-slate-500">Guest accounts have limited access</p>
               </div>
             </div>

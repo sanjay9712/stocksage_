@@ -11,12 +11,14 @@ import {
   fetchBotHistory,
   triggerBotScan,
   fetchStrategyComparison,
+  fetchProvenStrategies,
   type BotDecision,
   type StrategyRanking,
   type DailyRecommendationData,
   type PaperDayHistory,
 } from "@/lib/api";
 import { useAuthContext } from "@/lib/auth-context";
+import { StrategyVerificationCard } from "@/components/StrategyVerificationBadge";
 
 const verdictColor: Record<string, string> = {
   robust: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10",
@@ -37,6 +39,11 @@ const stratLabel: Record<string, string> = {
   vwap: "VWAP Pullback",
   bollinger: "Bollinger Squeeze",
   ppo: "PPO Momentum",
+  ma_trend: "MA Trend",
+  gap_go: "Gap-and-Go",
+  sr_reversal: "S/R Reversal",
+  momentum_breakout: "Momentum Breakout",
+  abcd: "ABCD Pattern",
 };
 
 function timeAgo(iso: string | null): string {
@@ -71,6 +78,9 @@ export default function BotPage() {
   );
   const { data: comparisonData } = useSWR(
     "bot-comparison", () => fetchStrategyComparison(30), { refreshInterval: 60000, keepPreviousData: true }
+  );
+  const { data: provenData } = useSWR(
+    "proven-strategies-bot", () => fetchProvenStrategies(30), { refreshInterval: 300000, keepPreviousData: true }
   );
 
   const [scanning, setScanning] = useState(false);
@@ -158,6 +168,37 @@ export default function BotPage() {
           <div className="text-xl font-bold tabular-nums text-emerald-400">{Object.keys(status?.by_strategy || {}).length}</div>
         </div>
       </div>
+
+      {/* Strategy Verification Dashboard */}
+      {provenData && provenData.strategies.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-slate-400">Strategy Verification</h2>
+            <div className="flex items-center gap-3 text-xs">
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2 h-2 rounded-full bg-emerald-500" />
+                <span className="text-emerald-400 font-medium">{provenData.proven_count}</span>
+                <span className="text-slate-500">proven</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2 h-2 rounded-full bg-amber-500" />
+                <span className="text-amber-400 font-medium">{provenData.testing_count}</span>
+                <span className="text-slate-500">testing</span>
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2 h-2 rounded-full bg-rose-500" />
+                <span className="text-rose-400 font-medium">{provenData.unproven_count}</span>
+                <span className="text-slate-500">unproven</span>
+              </span>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {provenData.strategies.map((s) => (
+              <StrategyVerificationCard key={s.strategy} record={s} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Daily recommendation */}
       {rec?.found && rec.symbol && (
@@ -436,8 +477,8 @@ export default function BotPage() {
       )}
 
       <p className="text-xs text-slate-600 text-center">
-        Bot runs 5 strategies: Murphy multi-indicator (daily) + Nison candlestick scalping (intraday) + VWAP + Bollinger + PPO.
-        All trades are paper (no real money). Auto-scans every 5 min during market hours. Not investment advice.
+        Bot runs 10 strategies: Murphy + Nison Scalp + VWAP + Bollinger + PPO + MA Trend + Gap-and-Go + S/R Reversal + Momentum Breakout + ABCD.
+        All trades are paper (no real money). Auto-scans every 5 min during market hours. Only proven strategies are recommended. Not investment advice.
       </p>
     </div>
   );

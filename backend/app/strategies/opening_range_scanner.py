@@ -72,9 +72,8 @@ def _get_or_window(intraday: pd.DataFrame, market: str, or_minutes: int) -> tupl
     end_t = pd.to_datetime(f"{end_minutes // 60:02d}:{end_minutes % 60:02d}", format="%H:%M").time()
 
     # OR window: from market open to open + or_minutes
-    or_mask = pd.Series(times, index=intraday.index) >= pd.Series(times, index=intraday.index).apply(
-        lambda t: open_t <= t < end_t
-    )
+    time_series = pd.Series(times, index=intraday.index)
+    or_mask = time_series.apply(lambda t: open_t <= t < end_t)
     or_bars = intraday[or_mask]
 
     if or_bars.empty:
@@ -84,7 +83,7 @@ def _get_or_window(intraday: pd.DataFrame, market: str, or_minutes: int) -> tupl
     or_low = float(or_bars["Low"].min())
 
     # Bars after the OR window
-    after_mask = pd.Series(times, index=intraday.index).apply(lambda t: t >= end_t)
+    after_mask = time_series.apply(lambda t: t >= end_t)
     after_bars = intraday[after_mask]
 
     return or_high, or_low, after_bars
@@ -159,7 +158,7 @@ async def scan_opening_range(
         return None
 
     or_high, or_low, after_bars = or_result
-    avg_vol = ind.avg_volume(daily, 20) if not daily.empty else 0.0
+    avg_vol = ind.avg_volume(intraday, 20) if not intraday.empty and len(intraday) >= 20 else (ind.avg_volume(daily, 20) if not daily.empty else 0.0)
 
     breakout = _detect_breakout(after_bars, or_high, or_low, avg_vol)
     if breakout is None:

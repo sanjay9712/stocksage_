@@ -63,14 +63,89 @@ async def _fetch_daily_picks() -> dict:
 
 
 @router.get("/daily-picks")
-async def daily_picks(_t: User = Depends(require_token)):
+async def daily_picks(
+    _t: User = Depends(require_token),
+    proven_only: bool = Query(False),
+):
     """Top 5 stocks today using Murphy multi-indicator analysis.
 
     Scans Nifty 50+Next 50 universe, computes Murphy analysis on each,
     returns top 5 by composite_score with full entry/exit/stop/target.
+
+    If `proven_only=true`, picks are annotated with whether the Murphy
+    strategy is proven (verified over time via virtual bets). If no
+    strategies are proven yet, all picks are returned with a warning.
     """
     ttl = screen_cache_ttl(is_nse_open())
-    return await cached("daily:picks", ttl, _fetch_daily_picks)
+    result = await cached("daily:picks", ttl, _fetch_daily_picks)
+
+    if proven_only:
+        from app.db import SessionLocal
+        from app.bot.verifier import compute_strategy_track_records, get_proven_strategies
+
+        db = SessionLocal()
+        try:
+            records = await compute_strategy_track_records(db)
+            proven = get_proven_strategies(records)
+        finally:
+            db.close()
+
+        murphy_proven = "murphy" in proven
+        result["murphy_proven"] = murphy_proven
+        result["proven_strategies"] = proven
+        if not proven:
+            result["verification_warning"] = (
+                "No strategies have been proven yet (need 7+ days of virtual trade data). "
+                "Showing all picks — treat with caution until strategies are verified."
+            )
+        elif not murphy_proven:
+            result["verification_warning"] = (
+                "Murphy strategy is still in verification period. "
+                "Showing picks but they haven't been verified yet."
+            )
+    return result
+
+
+@router.get("/daily-picks/verification")
+async def picks_verification(_t: User = Depends(require_token)):
+    """Strategy verification dashboard — per-strategy track records with proven/testing/unproven verdict."""
+    from app.db import SessionLocal
+    from app.bot.verifier import compute_strategy_track_records
+
+    db = SessionLocal()
+    try:
+        records = await compute_strategy_track_records(db)
+    finally:
+        db.close()
+
+    return {
+        "strategies": [
+            {
+                "strategy": r.strategy,
+                "days_tracked": r.days_tracked,
+                "total_trades": r.total_trades,
+                "resolved_trades": r.resolved_trades,
+                "wins": r.wins,
+                "losses": r.losses,
+                "win_rate": r.win_rate,
+                "avg_pnl_pct": r.avg_pnl_pct,
+                "total_pnl_pct": r.total_pnl_pct,
+                "best_trade_pct": r.best_trade_pct,
+                "worst_trade_pct": r.worst_trade_pct,
+                "profitable_days": r.profitable_days,
+                "consistency_pct": r.consistency_pct,
+                "backtest_win_rate": r.backtest_win_rate,
+                "backtest_avg_return": r.backtest_avg_return,
+                "backtest_days": r.backtest_days,
+                "verdict": r.verdict,
+                "proven_since": r.proven_since.isoformat() if r.proven_since else None,
+            }
+            for r in records
+        ],
+        "proven_count": sum(1 for r in records if r.verdict == "proven"),
+        "testing_count": sum(1 for r in records if r.verdict == "testing"),
+        "unproven_count": sum(1 for r in records if r.verdict == "unproven"),
+    }
 
 
 @router.get("/daily-picks/refresh")

@@ -26,6 +26,7 @@ import {
   type PaperDayHistory,
 } from "@/lib/api";
 import { useAuthContext } from "@/lib/auth-context";
+import { StrategyVerificationBadge } from "@/components/StrategyVerificationBadge";
 
 type Tab = "vwap" | "bollinger" | "ppo" | "ma_trend" | "gap_go" | "sr_reversal" | "momentum_breakout" | "abcd" | "paper";
 
@@ -114,6 +115,9 @@ function StrategyTab({
     <div className="space-y-4">
       {/* Strategy description */}
       <div className="glass-card p-3 border-emerald-800/20">
+        <div className="mb-2">
+          <StrategyVerificationBadge strategy={strategy} />
+        </div>
         <p className="text-xs text-slate-400 leading-relaxed">
           {strategy === "vwap" && (
             <>

@@ -11,6 +11,7 @@ import {
   type DailyBacktestResult,
   type DailyBacktestTrade,
 } from "@/lib/api";
+import { StrategyVerificationBadge } from "@/components/StrategyVerificationBadge";
 
 // ---------------------------------------------------------------------------
 // Verdict badge
@@ -361,7 +362,10 @@ export default function DailyPicksPage() {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-100">Daily Top 5 Picks</h1>
-          <p className="text-xs text-slate-500 mt-1">
+          <div className="mt-1.5">
+            <StrategyVerificationBadge strategy="murphy" />
+          </div>
+          <p className="text-xs text-slate-500 mt-1.5">
             Murphy multi-indicator analysis — {data.total_scanned} stocks scanned
             {data.refreshed_at && ` · refreshed ${new Date(data.refreshed_at).toLocaleTimeString()}`}
             {data.market_status && ` · ${data.market_status}`}

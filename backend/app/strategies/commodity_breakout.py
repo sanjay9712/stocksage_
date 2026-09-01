@@ -58,7 +58,7 @@ def evaluate(ctx: CommodityContext) -> CommodityResult:
     pdh, pdl, pdc = float(prev["High"]), float(prev["Low"]), float(prev["Close"])
     piv = ind.pivots(pdh, pdl, pdc)
     atr_val = float(ind.atr(daily).iloc[-1])
-    avg_vol = ind.avg_volume(daily, 20)
+    avg_vol = ind.avg_volume(ctx.intraday, 20) if len(ctx.intraday) >= 20 else ind.avg_volume(daily, 20)
 
     # Guard against degenerate previous-day bars (yfinance sometimes returns a
     # placeholder bar with H==L==C on holidays/gaps). A breakout level with no

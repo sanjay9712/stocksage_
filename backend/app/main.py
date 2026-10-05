@@ -234,7 +234,7 @@ app = FastAPI(
 @app.get("/health")
 async def health():
     """Liveness probe — used by start-site.sh readiness waits and tunnels."""
-    return {"status": "ok"}
+    return {"status": "ok", "provider": settings.data_provider}
 
 app.add_middleware(
     CORSMiddleware,
@@ -283,8 +283,3 @@ app.include_router(bot_api.router, prefix="/api")
 app.include_router(long_term_api.router, prefix="/api")
 # live_stream router already carries its own /api/market prefix.
 app.include_router(live_stream_api.router)
-
-
-@app.get("/health")
-async def health() -> dict:
-    return {"status": "ok", "provider": settings.data_provider}

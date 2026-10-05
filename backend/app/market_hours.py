@@ -86,8 +86,9 @@ def us_status() -> dict:
 
 
 # Cache TTLs: short when market is open (live data), long when closed.
-# yfinance data is already ~15 min delayed, so 5 min cache during market hours is fine.
-LIVE_TTL = 3      # 3 seconds — near-live when market is open
+# yfinance data is already ~15 min delayed, so sub-minute screen refresh
+# buys nothing and hammers Yahoo (rate-limit risk on 50-100 symbol scans).
+LIVE_TTL = 60    # 1 minute — fine for 15-min-delayed data
 CLOSED_TTL = 3600   # 1 hour — data doesn't change after hours
 
 

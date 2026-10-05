@@ -231,7 +231,9 @@ async def stock_multifactor(symbol: str, _t: str = Depends(require_token)):
 
     async def _fetch():
         provider = get_provider()
-        daily = await provider.get_daily_history(symbol, 60)
+        # 252 days: the composite has a 50-EMA momentum leg — on a 60-bar
+        # frame the EMA is under-warmed (first-bar anchor still ~9% weight).
+        daily = await provider.get_daily_history(symbol, 252)
         fundamentals = await get_stock_fundamentals(symbol)
         score = mf.composite_score(daily if not daily.empty else None, fundamentals)
         return {"symbol": symbol, **score}

@@ -53,7 +53,15 @@ def _suffix(symbol: str) -> str:
 def _fetch_daily_sync(symbol: str, days: int) -> pd.DataFrame:
     """Synchronous yfinance call — runs in thread pool via to_thread."""
     ticker = yf.Ticker(_suffix(symbol))
-    df = ticker.history(period=f"{days + 10}d", interval="1d")
+    # One retry: yfinance intermittently returns empty frames on transient
+    # errors/rate limits; without a retry that symbol silently drops out of
+    # every universe scan.
+    df = pd.DataFrame()
+    for _ in range(2):
+        df = ticker.history(period=f"{days + 10}d", interval="1d")
+        if not df.empty:
+            break
+        time.sleep(1.0)
     if df.empty:
         return df
     df = df.dropna(subset=["Close"]).sort_index()
@@ -64,7 +72,12 @@ def _fetch_intraday_sync(symbol: str, interval: str, days: int) -> pd.DataFrame:
     """Synchronous yfinance call — runs in thread pool via to_thread."""
     ticker = yf.Ticker(_suffix(symbol))
     period = "1d" if days <= 1 else f"{days}d"
-    df = ticker.history(period=period, interval=interval)
+    df = pd.DataFrame()
+    for _ in range(2):
+        df = ticker.history(period=period, interval=interval)
+        if not df.empty:
+            break
+        time.sleep(1.0)
     if df.empty:
         return df
     # Same guard as the daily fetch: yfinance can return a partial current
@@ -75,13 +88,22 @@ def _fetch_intraday_sync(symbol: str, interval: str, days: int) -> pd.DataFrame:
 def _fetch_quote_sync(symbol: str) -> Quote:
     """Synchronous yfinance call — runs in thread pool via to_thread."""
     ticker = yf.Ticker(_suffix(symbol))
-    info = ticker.fast_info
-    # last_price can be None for stale/delisted tickers; 0.0 keeps callers
-    # that guard on `price > 0` working instead of raising TypeError.
-    last = info.last_price
+    info = None
+    for _ in range(2):
+        try:
+            info = ticker.fast_info
+            if info.last_price:
+                break
+        except Exception:
+            info = None
+        time.sleep(0.75)
+    if info is None or not info.last_price:
+        # Stale/delisted ticker: 0.0 keeps callers guarding on `price > 0`
+        # working instead of raising TypeError.
+        return Quote(symbol=symbol.upper(), price=0.0)
     return Quote(
         symbol=symbol.upper(),
-        price=float(last) if last else 0.0,
+        price=float(info.last_price),
         prev_close=float(info.previous_close) if info.previous_close else None,
         day_high=float(info.day_high) if info.day_high else None,
         day_low=float(info.day_low) if info.day_low else None,

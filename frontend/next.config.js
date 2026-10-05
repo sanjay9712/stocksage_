@@ -14,6 +14,10 @@ const nextConfig = {
       {
         source: "/api/:path*",
         destination: `${BACKEND}/api/:path*`,
+        // Dev proxies WebSockets implicitly; a production build (next start)
+        // requires this flag or the live-market WS stream (/api/market/stream-ws)
+        // breaks after deployment.
+        websocket: true,
       },
     ];
   },

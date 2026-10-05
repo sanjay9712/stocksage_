@@ -6,7 +6,7 @@ import asyncio
 from fastapi import APIRouter, Depends
 
 from app.api.auth import require_user
-from app.api.cache import cached
+from app.api.cache import cached, invalidate
 from app.strategies import mf_screener as scr
 from app.universe import get_mutual_funds
 
@@ -25,6 +25,14 @@ async def _run_mf_screen():
 @router.get("/mf/screener")
 async def mf_screener(_t = Depends(require_user)):
     return await cached("mf_screener", 600, _run_mf_screen)
+
+
+@router.post("/mf/screener/refresh")
+async def mf_screener_refresh(_t = Depends(require_user)):
+    """Force-refresh the MF screener — clears the cache so the next GET
+    fetches fresh data (e.g. after mfapi.in comes back from an outage)."""
+    invalidate("mf_screener")
+    return {"ok": True}
 
 
 @router.get("/mf/{code}/details")

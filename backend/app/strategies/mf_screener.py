@@ -136,8 +136,11 @@ async def _fetch_nav_history(code: str) -> pd.Series:
     df["date"] = pd.to_datetime(df["date"], format="%d-%m-%Y")
     df["nav"] = pd.to_numeric(df["nav"], errors="coerce")
     df = df.dropna(subset=["nav"]).sort_values("date").set_index("date")
-    # Keep the last ~2 years.
-    return df["nav"].last("730D")
+    # Keep the last ~2 years. (Series.last() was removed in pandas 2.x — it
+    # was row-position selection, not a date cutoff — so this raised and the
+    # per-fund try/except degraded every fund to zero metrics silently.)
+    cutoff = df.index.max() - pd.Timedelta(days=730)
+    return df["nav"][df["nav"].index >= cutoff]
 
 
 async def _fetch_amfi_current_navs() -> dict[str, float]:

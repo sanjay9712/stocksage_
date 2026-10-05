@@ -10,19 +10,29 @@ cd "$(dirname "$0")"
 [ -f ~/.cloudflared/config.yml ] && mv ~/.cloudflared/config.yml ~/.cloudflared/config.yml.bak 2>/dev/null
 
 echo "=== Starting backend ==="
-lsof -ti :8000 | xargs -r kill 2>/dev/null
+# fuser, not lsof: lsof misses port holders in this WSL environment.
+fuser -k 8000/tcp 2>/dev/null
 sleep 1
 cd backend
-nohup .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/backend.log 2>&1 &
+setsid nohup .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 > /tmp/backend.log 2>&1 < /dev/null &
 BACKEND_PID=$!
 echo "Backend PID: $BACKEND_PID"
 
 echo "=== Waiting for backend ==="
-sleep 4
+# Cold import of all providers takes 10-25s; wait for /health instead of a
+# fixed sleep.
+for i in $(seq 1 30); do
+    curl -s -m 2 http://localhost:8000/health > /dev/null 2>&1 && break
+    sleep 2
+done
 
 echo "=== Starting frontend ==="
+fuser -k 3000/tcp 2>/dev/null
+sleep 1
 cd ../frontend
-if [ -d ".next" ]; then
+# Only serve a production build when one actually exists (.next/BUILD_ID).
+# A dev-mode .next has no BUILD_ID and `next start` would crash.
+if [ -f ".next/BUILD_ID" ]; then
     nohup npx next start -p 3000 > /tmp/frontend.log 2>&1 &
 else
     nohup npx next dev -p 3000 > /tmp/frontend.log 2>&1 &
@@ -31,7 +41,10 @@ FRONTEND_PID=$!
 echo "Frontend PID: $FRONTEND_PID"
 
 echo "=== Waiting for frontend ==="
-sleep 5
+for i in $(seq 1 30); do
+    curl -s -m 2 -o /dev/null http://localhost:3000 && break
+    sleep 2
+done
 
 echo "=== Starting Cloudflare Tunnel ==="
 pkill -f "cloudflared tunnel" 2>/dev/null

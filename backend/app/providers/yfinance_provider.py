@@ -67,16 +67,21 @@ def _fetch_intraday_sync(symbol: str, interval: str, days: int) -> pd.DataFrame:
     df = ticker.history(period=period, interval=interval)
     if df.empty:
         return df
-    return df.sort_index()
+    # Same guard as the daily fetch: yfinance can return a partial current
+    # bar with NaN OHLC (but real volume) that would poison intraday math.
+    return df.dropna(subset=["Close"]).sort_index()
 
 
 def _fetch_quote_sync(symbol: str) -> Quote:
     """Synchronous yfinance call — runs in thread pool via to_thread."""
     ticker = yf.Ticker(_suffix(symbol))
     info = ticker.fast_info
+    # last_price can be None for stale/delisted tickers; 0.0 keeps callers
+    # that guard on `price > 0` working instead of raising TypeError.
+    last = info.last_price
     return Quote(
         symbol=symbol.upper(),
-        price=float(info.last_price),
+        price=float(last) if last else 0.0,
         prev_close=float(info.previous_close) if info.previous_close else None,
         day_high=float(info.day_high) if info.day_high else None,
         day_low=float(info.day_low) if info.day_low else None,

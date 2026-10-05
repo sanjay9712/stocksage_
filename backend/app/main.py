@@ -1,11 +1,43 @@
 """FastAPI entrypoint."""
 from __future__ import annotations
 
+import json
 import logging
+import math
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
+
+
+def _sanitize_json(obj: Any) -> Any:
+    """Recursively replace non-finite floats (NaN/±Inf) with None."""
+    if isinstance(obj, dict):
+        return {k: _sanitize_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_json(v) for v in obj]
+    if isinstance(obj, float) and not math.isfinite(obj):
+        return None
+    return obj
+
+
+class SafeJSONResponse(JSONResponse):
+    """JSONResponse that never emits bare NaN/Infinity tokens.
+
+    json.dumps allows them by default, but they are invalid JSON and make the
+    frontend's JSON.parse() throw. yfinance can surface NaN cells (partial
+    bars, missing fundamentals), so sanitize at the response edge.
+    """
+
+    def render(self, content: Any) -> bytes:
+        return json.dumps(
+            _sanitize_json(content),
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+        ).encode("utf-8")
 
 from app.config import settings
 from app.db import init_db
@@ -152,7 +184,18 @@ async def lifespan(app: FastAPI):
         await live_engine.stop()
 
 
-app = FastAPI(title="Intraday Screener", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="Intraday Screener",
+    version="0.1.0",
+    lifespan=lifespan,
+    default_response_class=SafeJSONResponse,
+)
+
+
+@app.get("/health")
+async def health():
+    """Liveness probe — used by start-site.sh readiness waits and tunnels."""
+    return {"status": "ok"}
 
 app.add_middleware(
     CORSMiddleware,

@@ -1,6 +1,7 @@
 """FastAPI entrypoint."""
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -132,8 +133,11 @@ async def lifespan(app: FastAPI):
     try:
         from app.scheduler import start_scheduler
         start_scheduler()
-    except Exception:  # pragma: no cover - scheduler is non-critical for API
-        pass
+    except Exception:
+        # Scheduler is non-critical for the API, but a silent pass hides real
+        # breakage (bad tz, import errors) — log it so it shows in the server
+        # log instead of dying invisibly.
+        logging.getLogger("app.main").exception("scheduler failed to start")
     # Pre-warm the slowest caches in the background so the first user
     # doesn't wait 5-8s for a cold-cache rebuild.
     import asyncio

@@ -10,6 +10,8 @@ NIFTY_50 = [
     "HEROMOTOCO", "BAJAJ-AUTO", "INDUSINDBK", "M&M", "SHRIRAMFIN",
     "BPCL", "HINDALCO", "SBILIFE", "ICICIGI", "TATACONSUM",
     "UPL", "ADANIPORTS",
+    # HAL (Hindustan Aeronautics) completes the 50th slot.
+    "HAL",
 ]
 
 # Nifty Next 50 — the 51st–100th largest by market cap. Broadens the intraday
@@ -24,6 +26,9 @@ NIFTY_NEXT_50 = [
     "CHOLAFIN", "JINDALSTEL", "ZYDUSLIFE", "INDUSTOWER", "SRF",
     "RECLTD", "PFC", "MCDOWELL-N", "UNITDSPR", "LODHA", "FEDERALBNK",
     "ESCORTS", "AUBANK", "DIXON",
+    # TMPV (Tata Motors Passenger Vehicles) entered the index after the
+    # Oct-2025 Tata Motors split (TMCV / TMPV).
+    "TMPV",
 ]
 
 UNIVERSES = {"nifty50": NIFTY_50, "nifty100": NIFTY_50 + NIFTY_NEXT_50}
@@ -48,7 +53,8 @@ COMMODITIES = [
     {"name": "Natural Gas (MCX proxy)", "symbol": "NG=F", "category": "energy"},
     {"name": "Copper (MCX proxy)", "symbol": "HG=F", "category": "metals"},
     {"name": "Aluminium (LME proxy)", "symbol": "ALI=F", "category": "metals"},
-    {"name": "Zinc (LME proxy)", "symbol": "ZIN=F", "category": "metals"},
+    # Zinc removed: yfinance has no valid zinc futures ticker (ZIN=F 404s;
+    # ZN=F is US 10Y T-Notes, ZS=F unverified). Needs a real LME/MCX source.
 ]
 
 

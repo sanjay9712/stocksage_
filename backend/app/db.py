@@ -279,6 +279,21 @@ class StrategyVerification(Base):
 
 
 engine = create_engine(settings.db_url, connect_args={"check_same_thread": False})
+
+# SQLite ignores ForeignKey constraints (and ondelete="CASCADE") unless
+# PRAGMA foreign_keys=ON is set per connection — it defaults OFF and is not
+# persisted in the file. Enable it so FK/cascade behavior matches what the
+# ORM models declare.
+from sqlalchemy import event
+
+
+@event.listens_for(engine, "connect")
+def _enable_sqlite_foreign_keys(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
+
+
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 

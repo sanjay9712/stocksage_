@@ -97,12 +97,18 @@ async def _prewarm_caches():
     from app.market_hours import is_nse_open, screen_cache_ttl
 
     ttl = screen_cache_ttl(is_nse_open())
-    # Fire all three strategy scans + stock screen concurrently.
+    # Fire all three strategy scans + stock screen + the two heaviest
+    # non-scan endpoints concurrently.
+    from app.api.mf import _run_mf_screen
+    from app.providers.institutional_flow import fetch_fii_dii_cashflow
+
     await asyncio.gather(
         cached("strat:vwap:all", ttl, lambda: _scan_universe(vwap_strat.evaluate_vwap_pullback, "vwap")),
         cached("strat:bollinger:all", ttl, lambda: _scan_universe(bollinger_strat.evaluate_squeeze, "bollinger")),
         cached("strat:ppo:all", ttl, lambda: _scan_universe(ppo_strat.evaluate_ppo, "ppo")),
         cached("nse_stock_screen", ttl, _prewarm_stock_screen),
+        cached("mf_screener", 600, _run_mf_screen),
+        cached("fii_dii_cashflow", ttl, fetch_fii_dii_cashflow),
         return_exceptions=True,
     )
 
@@ -192,7 +198,11 @@ async def lifespan(app: FastAPI):
     # Start the scheduler only under the running server (not during tests).
     try:
         from app.scheduler import start_scheduler
-        start_scheduler()
+        sched = start_scheduler()
+        # print (not logging): the root logger has no handler under uvicorn,
+        # so INFO from the "scheduler"/"apscheduler" loggers is dropped and
+        # the startup would be invisible in the server log.
+        print(f"[startup] scheduler started: {len(sched.get_jobs())} jobs ({settings.tz})", flush=True)
     except Exception:
         # Scheduler is non-critical for the API, but a silent pass hides real
         # breakage (bad tz, import errors) — log it so it shows in the server

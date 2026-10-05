@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.auth import require_token
 from app.api.cache import cached
+from app.holdings.base import Holding
 from app.holdings.factory import get_broker
 from app.providers.factory import get_provider
 from app import indicators as ind
@@ -29,7 +30,7 @@ SECTOR_ETF_REPLACEMENTS = {
     "HDFCBANK": "BANKBEES",
     "ICICIBANK": "BANKBEES",
     "SBIN": "BANKBEES",
-    "TATAMOTORS": "NIFTYBEES",
+    "TMCV": "NIFTYBEES",
     "AAPL": "XLK",
     "MSFT": "XLK",
     "GOOGL": "XLK",
@@ -57,9 +58,34 @@ async def tax_harvest(_t=Depends(require_token)):
     - Wash-sale warning period (30 days)
     """
     async def _fetch():
+        import asyncio
         broker = get_broker()
         holdings = await broker.get_holdings()
         provider = get_provider()
+
+        # Prefer live prices: the broker's current_price can be stale (mock
+        # broker / delayed feed), which would report wrong P&L and miss
+        # real harvesting opportunities.
+        async def _live_price(h):
+            try:
+                q = await provider.get_quote(h.symbol)
+                if q and q.price and q.price > 0:
+                    return float(q.price)
+            except Exception:
+                pass
+            return None
+
+        prices = await asyncio.gather(*[_live_price(h) for h in holdings])
+        # The broker's Holding.pnl is a plain field MockBroker never populates
+        # (always 0.0), so compute it here from the effective price.
+        effective = []
+        for h, lp in zip(holdings, prices):
+            price = lp if lp else h.current_price
+            eff = Holding(symbol=h.symbol, quantity=h.quantity, avg_price=h.avg_price,
+                          current_price=price, product=h.product)
+            eff.pnl = (price - h.avg_price) * h.quantity
+            effective.append(eff)
+        holdings = effective
 
         losers = [h for h in holdings if h.pnl < 0]
         gainers = [h for h in holdings if h.pnl > 0]

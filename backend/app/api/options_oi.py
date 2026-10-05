@@ -25,6 +25,23 @@ _INDEX_MAP = {
     "SENSEX": "^BSESN",
 }
 
+# NSE names for the index options fetched from nseindia.com directly
+# (SENSEX is BSE — no NSE chain, stays on yfinance).
+_NSE_INDEXES = {"NIFTY": True, "NIFTY50": True, "BANKNIFTY": True, "FINNIFTY": True}
+
+
+def _nse_target(original_symbol: str) -> tuple[str, bool] | None:
+    """Return (nse_symbol, is_index) if NSE's own chain API can serve this
+    symbol; None for US symbols / BSE indices (yfinance path)."""
+    if original_symbol in _NSE_INDEXES:
+        # NIFTY50 → NSE symbol is "NIFTY"
+        return ("NIFTY" if original_symbol == "NIFTY50" else original_symbol), True
+    if original_symbol in _INDEX_MAP:
+        return None
+    # Any other plain symbol is treated as an NSE stock (the yfinance
+    # fallback below still runs if the NSE fetch comes back empty).
+    return original_symbol, False
+
 
 def _compute_max_pain(calls: list[dict], puts: list[dict], strikes: list[float]) -> float:
     """Max Pain: the strike price at which option writers (sellers) experience
@@ -69,19 +86,30 @@ async def options_oi(
     Returns call/put OI by strike, max pain, PCR, top resistance (high call OI)
     and support (high put OI) levels.
     """
-    symbol = symbol.strip().upper().replace(".NS", "").replace("NSE:", "")
+    original = symbol.strip().upper().replace(".NS", "").replace("NSE:", "")
+    symbol = original
 
     # Map common index names to yfinance symbols
     if symbol in _INDEX_MAP:
         symbol = _INDEX_MAP[symbol]
 
+    nse = _nse_target(original)
+
     async def _fetch():
         provider = get_provider()
 
-        # Use yfinance directly for option chains (most providers don't support it)
-        from app.providers.yfinance_provider import YFinanceProvider
-        yf_provider = YFinanceProvider()
-        chain = await yf_provider.get_option_chain(symbol, expiry)
+        # NSE option chains come straight from nseindia.com — yfinance has no
+        # NSE chain data at all (no expiries for indices or stocks).
+        chain = {"calls": [], "puts": [], "expiries": [], "expiry": None}
+        if nse:
+            from app.providers.nse_options import fetch_nse_option_chain
+            chain = await fetch_nse_option_chain(nse[0], nse[1], expiry)
+
+        if not chain.get("calls") and not chain.get("puts"):
+            # Fallback for US options / BSE / NSE failure.
+            from app.providers.yfinance_provider import YFinanceProvider
+            yf_provider = YFinanceProvider()
+            chain = await yf_provider.get_option_chain(symbol, expiry)
 
         if not chain.get("calls") and not chain.get("puts"):
             return {
@@ -103,12 +131,18 @@ async def options_oi(
         calls = chain["calls"]
         puts = chain["puts"]
 
-        # Get current price
-        try:
-            quote = await yf_provider.get_quote(symbol)
-            current_price = quote.price
-        except Exception:
-            current_price = 0.0
+        # Current price: prefer the underlying value NSE reports in the chain;
+        # fall back to a yfinance quote.
+        current_price = 0.0
+        if chain.get("underlying"):
+            current_price = float(chain["underlying"])
+        if not current_price:
+            from app.providers.yfinance_provider import YFinanceProvider
+            try:
+                quote = await YFinanceProvider().get_quote(symbol)
+                current_price = quote.price
+            except Exception:
+                current_price = 0.0
 
         # Aggregate OI by strike
         call_oi = {}

@@ -45,6 +45,7 @@ from app.api import rebalancing as rebalancing_api
 from app.api import user_auth as user_auth_api
 from app.api import bot as bot_api
 from app.api import long_term as long_term_api
+from app.api import live_stream as live_stream_api
 
 
 async def _prewarm_caches():
@@ -137,7 +138,14 @@ async def lifespan(app: FastAPI):
     # doesn't wait 5-8s for a cold-cache rebuild.
     import asyncio
     asyncio.create_task(_prewarm_caches())
-    yield
+    # Start the live-market engine (background pollers → SSE stream).
+    from app.live.engine import LiveEngine
+    live_engine = LiveEngine()
+    await live_engine.start()
+    try:
+        yield
+    finally:
+        await live_engine.stop()
 
 
 app = FastAPI(title="Intraday Screener", version="0.1.0", lifespan=lifespan)
@@ -187,6 +195,8 @@ app.include_router(rebalancing_api.router, prefix="/api")
 app.include_router(user_auth_api.router, prefix="/api")
 app.include_router(bot_api.router, prefix="/api")
 app.include_router(long_term_api.router, prefix="/api")
+# live_stream router already carries its own /api/market prefix.
+app.include_router(live_stream_api.router)
 
 
 @app.get("/health")

@@ -129,6 +129,22 @@ async def market_live(_t: str = Depends(require_token)):
         "INDIA VIX": "^INDIAVIX",
     }
 
+    # Fast path: the live engine is already polling NSE in the background.
+    # If it has fresh data, serve from memory — no extra NSE round-trip.
+    from app.live.store import store as live_store
+    snap = live_store.snapshot()
+    key_names = {"NIFTY 50", "NIFTY BANK", "NIFTY IT", "NIFTY MIDCAP 100", "INDIA VIX"}
+    have = {k: v for k, v in snap["prices"].items() if k in key_names}
+    if snap["fresh"] and have:
+        return {
+            "status": snap["status"],
+            "indices": [
+                {"name": n, "last": p.get("last"), "change": p.get("change"), "pct_change": p.get("pct_change")}
+                for n, p in have.items()
+            ],
+            "source": "live-engine",
+        }
+
     async def _fetch():
         from app.providers.factory import get_provider
         provider = get_provider()
@@ -183,7 +199,20 @@ async def market_live(_t: str = Depends(require_token)):
                     "source": "yfinance (NSE unreachable)",
                 }
 
-        return {"status": status or {"market_open": False, "source": "unavailable"}, "indices": key_indices, "source": "nseindia.com" if key_indices and not str(status.get("source", "")).startswith("yfinance") else "yfinance"}
+        result = {"status": status or {"market_open": False, "source": "unavailable"}, "indices": key_indices, "source": "nseindia.com" if key_indices and not str(status.get("source", "")).startswith("yfinance") else "yfinance"}
+        # Warm the live store from this fetch so subsequent calls (and the
+        # SSE stream) have data even before the engine's next poll lands.
+        import time
+        prices = {
+            i["name"]: {
+                "last": i.get("last"), "change": i.get("change"),
+                "pct_change": i.get("pct_change"), "source": result["source"], "ts": time.time(),
+            }
+            for i in key_indices
+        }
+        live_store.set_status(result["status"])
+        live_store.publish(live_store.update_prices(prices))
+        return result
 
     # No cache — always fetch fresh from NSE for real-time index data.
     return await _fetch()

@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     # Timezone for market scheduling.
     tz: str = "Asia/Kolkata"
 
+    # Live market engine: background pollers feeding the SSE stream.
+    live_index_poll: float = 2.0        # seconds between NSE index/status fetches
+    live_watchlist_poll: float = 5.0    # seconds between stock-quote fetches
+    live_watchlist: str = ""            # comma-separated symbols (empty = indices only)
+    live_idle_poll: float = 30.0        # seconds between fetches when market is closed
+
     # SQLite database path (resolved relative to backend/ root).
     db_path: str = "data/trading.db"
 

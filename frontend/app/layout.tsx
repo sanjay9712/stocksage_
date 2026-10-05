@@ -6,6 +6,7 @@ import HeaderUser from "@/components/HeaderUser";
 import NavDropdown from "@/components/NavDropdown";
 import Providers from "./providers";
 import { AuthProvider } from "@/lib/auth-context";
+import { LiveMarketProvider } from "@/lib/live-market";
 
 export const metadata: Metadata = {
   title: "StockSage — NSE Screener",
@@ -19,6 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Providers>
         <AuthProvider>
         <AuthGate>
+        <LiveMarketProvider>
           <header className="border-b border-slate-800/60 bg-slate-950/70 backdrop-blur-md sticky top-0 z-20">
             <div className="mx-auto max-w-6xl px-4 py-3 flex items-center justify-between gap-4">
               <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight whitespace-nowrap group">
@@ -38,6 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <footer className="mx-auto max-w-6xl px-4 py-8 text-xs text-slate-600 border-t border-slate-800/40 mt-8">
             <p>Systematic screen for educational use. Data delayed ~15 min via Yahoo Finance. Not investment advice.</p>
           </footer>
+        </LiveMarketProvider>
         </AuthGate>
         </AuthProvider>
         </Providers>

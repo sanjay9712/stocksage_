@@ -180,8 +180,14 @@ def _persist_picks(picks: list[Pick]) -> None:
     db = SessionLocal()
     try:
         # Replace today's picks for these symbols.
+        # Use ORM-level delete (not bulk query.delete()) so the cascade
+        # "all, delete-orphan" removes the child PickExplanation rows too.
+        # Bulk delete bypasses the cascade and leaves orphaned explanations,
+        # which collide with the (reused) pick id on the next scan:
+        # "UNIQUE constraint failed: pick_explanations.pick_id".
         for pick in picks:
-            db.query(PickRow).filter_by(date=pick.date, symbol=pick.symbol).delete()
+            for existing in db.query(PickRow).filter_by(date=pick.date, symbol=pick.symbol).all():
+                db.delete(existing)
             row = PickRow(
                 date=pick.date,
                 symbol=pick.symbol,

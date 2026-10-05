@@ -37,3 +37,6 @@ node_modules/
 out/
 build/
 dist/
+
+# Local binaries (ngrok etc.)
+bin/

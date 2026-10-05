@@ -60,13 +60,19 @@ async def review_holdings(broker: BrokerProvider, today_picks: set[str]) -> list
 
 
 def _review_one(h: Holding, daily: pd.DataFrame, today_picks: set[str]) -> HoldingReview:
-    pnl = (h.current_price - h.avg_price) * h.quantity
-    pnl_pct = (h.current_price - h.avg_price) / h.avg_price * 100.0 if h.avg_price else 0.0
+    # Prefer the live close from daily history: the broker's current_price
+    # can be stale (mock broker / delayed feed), which would make P&L
+    # contradict the live trend verdict below.
+    live_close = float(daily["Close"].iloc[-1]) if not daily.empty else None
+    price = live_close if live_close else h.current_price
+
+    pnl = (price - h.avg_price) * h.quantity
+    pnl_pct = (price - h.avg_price) / h.avg_price * 100.0 if h.avg_price else 0.0
 
     if daily.empty or len(daily) < 50:
         return HoldingReview(
             symbol=h.symbol, quantity=h.quantity, avg_price=h.avg_price,
-            current_price=h.current_price, pnl=round(pnl, 2), pnl_pct=round(pnl_pct, 2),
+            current_price=round(price, 2), pnl=round(pnl, 2), pnl_pct=round(pnl_pct, 2),
             trend="unknown", ema20=0.0, ema50=0.0, atr=0.0, drawdown_from_peak=0.0,
             verdict="review",
             rationale="Insufficient price history to evaluate trend; verify manually.",
@@ -120,7 +126,7 @@ def _review_one(h: Holding, daily: pd.DataFrame, today_picks: set[str]) -> Holdi
     rationale = " ".join(rationale_bits) if rationale_bits else "No issues detected."
     return HoldingReview(
         symbol=h.symbol, quantity=h.quantity, avg_price=h.avg_price,
-        current_price=h.current_price, pnl=round(pnl, 2), pnl_pct=round(pnl_pct, 2),
+        current_price=round(price, 2), pnl=round(pnl, 2), pnl_pct=round(pnl_pct, 2),
         trend=trend, ema20=round(ema20, 2), ema50=round(ema50, 2), atr=round(atr_val, 2),
         drawdown_from_peak=round(dd_from_peak, 4), verdict=verdict,
         rationale=rationale, actions=actions,

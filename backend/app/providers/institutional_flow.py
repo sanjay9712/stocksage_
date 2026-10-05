@@ -66,11 +66,16 @@ async def fetch_fii_dii_cashflow() -> list[dict[str, Any]]:
             log.warning("FII/DII endpoint returned %d", r.status_code)
             return []
         data = r.json()
-        rows = data.get("data", [])
+        # NSE returns a bare list of rows (values are strings); tolerate a
+        # {"data": [...]} envelope too in case the API changes back.
+        rows = data.get("data", []) if isinstance(data, dict) else data
         out = []
         for row in rows:
+            if not isinstance(row, dict):
+                continue
             out.append({
                 "category": row.get("category", ""),
+                "date": row.get("date", ""),
                 "buy_value": float(row.get("buyValue", 0) or 0),
                 "sell_value": float(row.get("sellValue", 0) or 0),
                 "net_value": float(row.get("netValue", 0) or 0),

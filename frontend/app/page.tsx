@@ -4,11 +4,30 @@ import useSWR from "swr";
 import { fetchDayStatus, fetchPicks, fetchMarketLive, triggerScan } from "@/lib/api";
 import PicksTable from "@/components/PicksTable";
 import StockSearch from "@/components/StockSearch";
+import { useLiveMarket } from "@/lib/live-market";
 
 export default function HomePage() {
   const { data: day, error: dayErr, mutate: mutateDay } = useSWR("day", fetchDayStatus, { refreshInterval: 10000, keepPreviousData: true });
   const { data: picks, error: picksErr, mutate: mutatePicks, isLoading } = useSWR("picks", fetchPicks, { refreshInterval: 10000, keepPreviousData: true });
-  const { data: market, error: marketErr } = useSWR("market", fetchMarketLive, { refreshInterval: 5000, keepPreviousData: true });
+  // One-shot fetch for the initial paint / fallback; the SSE stream takes over
+  // once connected so the ticker no longer polls (no visible refresh).
+  const { data: marketPoll } = useSWR("market", fetchMarketLive, { refreshInterval: 0, keepPreviousData: true });
+  const live = useLiveMarket();
+
+  // Prefer live-stream data; fall back to the one-shot poll until it lands.
+  const market =
+    live.connected && Object.keys(live.indices).length > 0
+      ? {
+          status: live.status ?? { market_open: false, source: "live" },
+          indices: live.orderedIndices.map((i) => ({
+            name: i.name,
+            last: i.last,
+            change: i.change,
+            pct_change: i.pct_change,
+          })),
+          source: live.status?.source ?? "live",
+        }
+      : marketPoll;
 
   async function scan() {
     try {
@@ -56,22 +75,32 @@ export default function HomePage() {
             <span className="text-xs text-slate-600">
               {market.status.source} · {market.status.trade_date}
             </span>
-            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-400">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              LIVE
+            <span className={`inline-flex items-center gap-1 text-[10px] font-semibold ${live.connected ? "text-emerald-400" : "text-slate-500"}`}>
+              <span className={`inline-block w-1.5 h-1.5 rounded-full ${live.connected ? "bg-emerald-400 animate-pulse" : "bg-slate-500"}`} />
+              {live.connected ? "LIVE" : "CONNECTING"}
             </span>
           </div>
           {market.indices.length > 0 && (
             <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 mt-4">
-              {market.indices.map((idx) => (
-                <div key={idx.name} className="stat-box text-center">
-                  <div className="text-[11px] text-slate-500 truncate">{idx.name}</div>
-                  <div className="text-sm font-semibold tabular-nums text-slate-200">{idx.last?.toLocaleString()}</div>
-                  <div className={`text-xs tabular-nums font-medium ${idx.pct_change >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                    {idx.pct_change >= 0 ? "▲" : "▼"} {Math.abs(idx.pct_change)?.toFixed(2)}%
+              {market.indices.map((idx) => {
+                const flash = live.flashOf(idx.name);
+                return (
+                  // Key includes the flash id so the CSS animation replays on
+                  // every price move, even in the same direction.
+                  <div key={idx.name} className="stat-box text-center">
+                    <div className="text-[11px] text-slate-500 truncate">{idx.name}</div>
+                    <div
+                      key={flash ? `v${flash.id}` : "v"}
+                      className={`text-sm font-semibold tabular-nums text-slate-200 ${flash ? (flash.dir === "up" ? "tick-up" : "tick-down") : ""}`}
+                    >
+                      {idx.last?.toLocaleString()}
+                    </div>
+                    <div className={`text-xs tabular-nums font-medium ${idx.pct_change >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                      {idx.pct_change >= 0 ? "▲" : "▼"} {Math.abs(idx.pct_change)?.toFixed(2)}%
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
           {!market.status.market_open && (

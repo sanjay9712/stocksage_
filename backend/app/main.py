@@ -158,6 +158,34 @@ async def _prewarm_stock_screen():
     }
 
 
+async def _amfi_snapshot_catchup() -> None:
+    """Backfill today's AMFI NAV snapshot if the 18:00 IST run was missed.
+
+    The job's misfire grace is 1h, so whenever the server isn't up between
+    18:00 and 19:00 IST (common — it gets restarted a lot during dev), the
+    daily snapshot silently never runs and the MF fallback history freezes.
+    """
+    try:
+        from datetime import datetime
+        from app.market_hours import _IST, today_ist
+        from app.db import MfNavRow, SessionLocal
+        from app.strategies.mf_screener import snapshot_amfi_navs
+
+        now_ist = datetime.now(_IST)
+        db = SessionLocal()
+        try:
+            has_today = db.query(MfNavRow).filter_by(date=today_ist()).count() > 0
+        finally:
+            db.close()
+        if has_today or now_ist.hour < 18:
+            return  # already snapshotted, or the 18:00 job will handle it
+        persisted = await snapshot_amfi_navs()
+        if persisted:
+            print(f"[startup] AMFI snapshot catch-up: {persisted} NAVs persisted", flush=True)
+    except Exception:
+        logging.getLogger("app.main").exception("AMFI snapshot catch-up failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -174,6 +202,7 @@ async def lifespan(app: FastAPI):
     # doesn't wait 5-8s for a cold-cache rebuild.
     import asyncio
     asyncio.create_task(_prewarm_caches())
+    asyncio.create_task(_amfi_snapshot_catchup())
     # Start the live-market engine (background pollers → SSE stream).
     from app.live.engine import LiveEngine
     live_engine = LiveEngine()
